@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Interactive inline question forms for ZCode",
+  "license": "MIT",
   "scripts": {
     "build": "node askme/scripts/build.mjs",
     "test": "npm run build && node --test askme/tests/server.test.mjs",
