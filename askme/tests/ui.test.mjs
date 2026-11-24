@@ -4,7 +4,6 @@ import { chromium } from "playwright";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { computeFormId } from "../src/server/main.mjs";
 
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const cardUrl = pathToFileURL(join(pluginRoot, "dist", "ui", "card.html")).href;
@@ -95,7 +94,6 @@ async function openCard(options = {}) {
       window.__mock = {
         state,
         sent: [],
-        calls: [],
         reject,
         rejectMessage: "Session is not ready to accept input",
         gate,
@@ -135,7 +133,7 @@ async function openCard(options = {}) {
           window.__mock.state = next;
           for (const subscriber of window.__mock.subscribers) subscriber();
         },
-        callTool: async (name, args) => {
+        sendFollowUpMessage: async ({ prompt }) => {
           if (window.__mock.reject) throw new Error(window.__mock.rejectMessage);
           if (window.__mock.gate) {
             if (!window.__mock.pending) {
@@ -145,11 +143,7 @@ async function openCard(options = {}) {
             }
             await window.__mock.pending;
           }
-          window.__mock.calls.push({ name, arguments: args });
-          if (args && typeof args.message === "string") {
-            window.__mock.sent.push(args.message);
-          }
-          return { content: [{ type: "text", text: "Answers received." }] };
+          window.__mock.sent.push(prompt);
         },
         notifyIntrinsicHeight: () => {},
         subscribe: (subscriber) => {
@@ -223,28 +217,6 @@ test("submits a formatted Markdown message for single, multi and long text", asy
         "   第二行",
       ].join("\n"),
     );
-  } finally {
-    await context.close();
-  }
-});
-
-test("submits the form id and answers through askme_submit", async () => {
-  const { context, page } = await openCard();
-  try {
-    await page.locator('[data-testid="option-q1-0"]').click();
-    await page.locator('[data-testid="option-q2-0"]').click();
-    await page.fill('[data-testid="text-q3"]', "说明");
-    await submit(page);
-
-    await page.waitForFunction(() => window.__mock.calls.length > 0);
-    const calls = await page.evaluate(() => window.__mock.calls);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].name, "askme_submit");
-    assert.equal(calls[0].arguments.formId, computeFormId(sampleForm));
-    assert.equal(calls[0].arguments.answers.q1.value, "A 选项");
-    assert.deepEqual(calls[0].arguments.answers.q2.values, ["单选"]);
-    assert.equal(calls[0].arguments.answers.q3.value, "说明");
-    assert.match(calls[0].arguments.message, /表单回答 · 测试表单/);
   } finally {
     await context.close();
   }

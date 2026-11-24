@@ -1,6 +1,6 @@
 # askme
 
-ZCode 的内联交互表单插件：agent 需要向你提问时，在对话消息流里渲染一张 HTML 表单；你点选、填写或采纳推荐后提交，答案作为 `askme_wait` 的工具结果回到主会话，agent 在同一轮继续。
+ZCode 的内联交互表单插件：agent 需要向你提问时，在对话消息流里渲染一张 HTML 表单；你点选、填写或采纳推荐后提交，答案作为一条用户消息回到主会话，agent 继续下一轮。
 
 为 grill-me / grilling 这类访谈式澄清流程设计，也适用于任何需要 agent 主动提问的场景。
 
@@ -12,8 +12,7 @@ ZCode 的内联交互表单插件：agent 需要向你提问时，在对话消�
 - 推荐项徽标 + 「采纳全部推荐」
 - 必答标记；允许部分提交，未答项标记「（未回答）」
 - 提交后卡片折叠为「已提交」，可展开只读回看
-- `askme_form` 立即返回并让卡片渲染；agent 紧接着调用 `askme_wait` 阻塞等待提交
-- 提交通过 app-only 的 `askme_submit` 工具回传，**不触发宿主的确认弹窗**；`askme_wait` 返回答案后 agent 在同一轮继续
+- 提交会打开宿主的可编辑确认框；点「发送」后作为一条**新的用户消息**回到主会话，开启下一轮
 - 草稿自动持久化；深/浅色主题跟随宿主
 - 卡片完全自包含：不加载外部字体、脚本、图片，不发网络请求
 
@@ -52,12 +51,10 @@ askme_UI/
 
 装好后有两种触发方式：
 
-- **agent 自主调用**：直接说「用表单问我几个问题」或「用 askme 插件问我」；agent 会调用 `askme_form`。
+- **agent 自主调用**：直接说「用表单问我几个问题」或任何需要澄清的任务；agent 会调用 `askme_form`。
 - **`/grill-me`**：grilling 技能里加了一行委托，检测到 `askme_form` 可用时会把每轮问题合并成一张表单，保留原来的问题、选项和推荐答案。
 
-插件不依赖全局偏好；泛化提问时模型仍可能选内置 `AskUserQuestion`，这是预期行为。需要全面优先时，再自行加 `~/.zcode/AGENTS.md` 偏好。
-
-提交后，`askme_wait` 的工具结果会带上类似下面的答案（不再是一条单独的用户消息）：
+提交后，宿主会弹出可编辑的确认框；点「发送」后主会话出现类似下面的用户消息：
 
 ```text
 表单回答 · 第 1 轮：触发与形态
@@ -80,8 +77,8 @@ askme_UI/
 
 1. 对话流里出现一张表单卡片，包含 4 个问题。
 2. 点「采纳全部推荐」后，单选/多选的推荐项被选中，文本框保持为空。
-3. 点「提交」后，卡片折叠成「已提交 · 4 题」，**不会弹出宿主确认框**。
-4. `askme_wait` 返回 `表单回答 ·` 开头的答案，agent 在同一轮继续；不会新增用户消息气泡。
+3. 点「提交」后，卡片折叠成「已提交 · 4 题」；宿主弹出可编辑确认框，点「发送」。
+4. 主会话出现一条以 `表单回答 ·` 开头的用户消息，agent 开始下一轮。
 5. 展开卡片可以看到刚才的答案，且输入框不可编辑。
 
 ## 开发
@@ -90,8 +87,8 @@ askme_UI/
 cd /Users/yulabu/Code/askme_UI   # 仓库根
 npm install
 npm run build                    # 生成 askme/dist/server.mjs 和 askme/dist/ui/card.html
-npm test                         # MCP 协议测试（17 项）
-npm run test:ui                  # 卡片 UI 测试（25 项，Playwright）
+npm test                         # MCP 协议测试（12 项）
+npm run test:ui                  # 卡片 UI 测试（24 项，Playwright）
 ```
 
 - 开发依赖在仓库根，`askme/` 目录本身不含 `node_modules`；安装时只复制约 800KB 的插件源码与构建产物。
@@ -101,22 +98,20 @@ npm run test:ui                  # 卡片 UI 测试（25 项，Playwright）
 
 ## 设计约束
 
-- **只做内联卡片**：按需求把表单放在消息流里；不使用侧栏面板形态。
-- **两段式工具调用**：宿主只有在工具调用返回后才会加载内联卡片，所以 `askme_form` 必须立即返回 `formId`；agent 紧接着调用 `askme_wait` 阻塞等待，卡片才能正常渲染并可交互。
-- **无宿主确认框**：提交走 app-only 的 `askme_submit`，不调用 `sendFollowUpMessage`，因此不会出现「插件想以你的身份发送消息」的弹窗。
-- **超时**：manifest 里 MCP `timeoutMs` 设为 10 分钟；`askme_wait` 每 15 秒发一次 progress 心跳，宿主会重置工具调用超时。用户也可以随时停止该轮。
-- **限制**：单张表单最多 8 题；widget state 16 KiB；HTML 资源单次读取 8 MiB；工具结果文本上限 30 KiB；卡片不发外部请求。
+- **只做内联卡片**：ZCode 的 `ui.surfaces` 侧栏面板关闭了 `sendFollowUpMessage` / `updateModelContext` / `setWidgetState`，无法把答案发回主会话。
+- **异步轮次**：工具立即返回，agent 结束本轮；用户提交产生一条 user 消息并开启下一轮。没有「工具阻塞等表单提交」的机制。
+- **限制**：单张表单最多 8 题；widget state 16 KiB；HTML 资源单次读取 8 MiB；卡片不发外部请求。
 - **优先级是软的**：宿主没有工具优先级机制，插件也无法覆盖内置 `AskUserQuestion`。目前靠工具描述、插件 skill 和 grilling 委托引导；**不修改全局 `~/.zcode/AGENTS.md`**。显式请求最稳；泛化提问偶发走内置属于预期降级。需要全面优先时，再单独加全局偏好或 `PermissionRequest` hook。
+- **提交确认**：真正“提交=新用户消息”只能走 `sendFollowUpMessage`；宿主对 iframe 点击不记账，所以每次都会弹一次可编辑确认框。插件无法跳过，这是用户消息语义的代价。想要无弹窗，可切换到 tag `v0.2.2-tool-result` 的工具结果模式。
 
 ## 已知待实测
 
-- 宿主能否在 `askme_form` 立即返回后渲染卡片，并在 `askme_wait` pending 期间保持卡片可交互。
-- 宿主对 10 分钟 `askme_wait` 的实际表现：进度心跳是否续期、停止按钮是否能取消。
-- app-only 的 `askme_submit` 是否能从卡片内正常调用（不在模型工具列表里）。
+- 宿主确认框每次提交都会出现；已确认无法用插件绕过。想要无弹窗请用 tag `v0.2.2-tool-result`。
 - 同一资源多次调用时，旧卡片是否会被新调用改写。
 - 无全局 AGENTS 时的独立触发：显式请求或 `/grill-me` 应稳定；泛化提问可能走内置。
+- 打字聚焦已在 0.2.2 修复（widget state 通知不再整卡重渲染），需实机复测。
 
-实机 0.1.0 已经验证：不声明 `ui.surfaces` 时内联卡片能渲染。0.1.1 修了 tool input 晚到导致的误报；0.2.0 的“askme_form 自己阻塞”会因为宿主等待工具返回而卡在“正在加载插件界面”，0.2.1 改成 `askme_form` 立即返回 + `askme_wait` 阻塞的两段式。
+实机 0.1.0 已经验证：不声明 `ui.surfaces` 时内联卡片能渲染。当时的问题是宿主的 tool input 通知晚于卡片启动，0.1.1 已改为「先订阅 + `toolOutput.form` 兜底 + 5 秒超时」，需要实机复测。
 
 如果实机验证发现差异，优先改卡片与 manifest，不改需求。
 

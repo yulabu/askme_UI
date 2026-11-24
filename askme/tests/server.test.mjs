@@ -4,14 +4,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFile } from "node:fs/promises";
-import { computeFormId } from "../src/server/main.mjs";
 
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const serverPath = join(pluginRoot, "dist", "server.mjs");
 const CARD_URI = "ui://askme/card.html";
 const CARD_MIME = "text/html;profile=mcp-app";
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let client;
 
@@ -70,15 +67,14 @@ const validForm = {
   ],
 };
 
-test("tools/list exposes the form, wait and app-only submit tools", async () => {
+test("tools/list exposes one model-visible inline tool with a valid schema", async () => {
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 3);
+  assert.equal(tools.length, 1);
 
-  const tool = tools.find((entry) => entry.name === "askme_form");
-  assert.ok(tool);
+  const tool = tools[0];
+  assert.equal(tool.name, "askme_form");
   assert.match(tool.description, /AskUserQuestion/);
-  assert.match(tool.description, /askme_wait/);
-  assert.match(tool.description, /Do not end the turn/i);
+  assert.match(tool.description, /last action/i);
   assert.equal(tool._meta?.ui?.resourceUri, CARD_URI);
   assert.equal(tool._meta?.ui?.preferredDisplayMode, "inline");
   assert.equal(tool._meta?.ui?.showInline, true);
@@ -89,24 +85,6 @@ test("tools/list exposes the form, wait and app-only submit tools", async () => 
   assert.deepEqual(tool.inputSchema.required, ["title", "questions"]);
   assert.equal(tool.inputSchema.properties.questions.minItems, 1);
   assert.equal(tool.inputSchema.properties.questions.maxItems, 8);
-
-  const wait = tools.find((entry) => entry.name === "askme_wait");
-  assert.ok(wait);
-  assert.equal(wait._meta?.ui, undefined);
-  assert.equal(wait._meta?.["anthropic/alwaysLoad"], true);
-  assert.deepEqual(wait.inputSchema.required, ["formId"]);
-
-  const submit = tools.find((entry) => entry.name === "askme_submit");
-  assert.ok(submit);
-  assert.deepEqual(submit._meta?.ui?.visibility, ["app"]);
-  assert.deepEqual(submit.inputSchema.required, ["formId", "message"]);
-});
-
-test("manifest gives MCP calls a 10 minute timeout", async () => {
-  const manifest = JSON.parse(
-    await readFile(join(pluginRoot, ".zcode-plugin", "plugin.json"), "utf8"),
-  );
-  assert.ok(manifest.mcpServers.askme.timeoutMs >= 300000);
 });
 
 test("resources/list advertises the card as an MCP App HTML resource", async () => {
@@ -125,125 +103,21 @@ test("resources/read returns self-contained HTML as text", async () => {
   assert.equal(typeof content.text, "string");
   assert.ok(content.text.length > 1000, "card HTML is present");
   assert.match(content.text, /window\.zcode/);
-  assert.match(content.text, /askme_submit/);
-  assert.doesNotMatch(content.text, /sendFollowUpMessage/);
+  assert.match(content.text, /sendFollowUpMessage/);
   assert.doesNotMatch(content.text, /https?:\/\//, "card must not reference external resources");
   assert.doesNotMatch(content.text, /\beval\s*\(/, "card must not call eval");
   assert.doesNotMatch(content.text, /\bnew Function\b/, "card must not build functions from strings");
 });
 
-test("askme_form returns a formId and askme_wait returns the submitted answers", async () => {
-  const formResult = await client.callTool({ name: "askme_form", arguments: validForm });
-  assert.notEqual(formResult.isError, true);
-  assert.match(formResult.content[0].text, /askme_wait/);
-  assert.match(formResult.content[0].text, /Do not end the turn/i);
-
-  const formId = formResult.structuredContent.formId;
-  assert.equal(formId, computeFormId(validForm));
-
-  const waitPromise = client.callTool({
-    name: "askme_wait",
-    arguments: { formId },
-  });
-  await sleep(100);
-
-  const message = "表单回答 · 第 1 轮：触发与形态\n\n1. 触发入口 → 两者都要";
-  const submitResult = await client.callTool({
-    name: "askme_submit",
-    arguments: {
-      formId,
-      message,
-      answers: { q1: { value: "两者都要" } },
-    },
-  });
-  assert.notEqual(submitResult.isError, true);
-  assert.match(submitResult.content[0].text, /Answers received/i);
-
-  const waitResult = await waitPromise;
-  assert.notEqual(waitResult.isError, true);
-  assert.equal(waitResult.content[0].type, "text");
-  assert.equal(waitResult.content[0].text, message);
-  assert.equal(waitResult.structuredContent.formId, formId);
-  assert.equal(waitResult.structuredContent.answers.q1.value, "两者都要");
-});
-
-test("askme_submit rejects a stale form id without closing the open form", async () => {
-  const formResult = await client.callTool({ name: "askme_form", arguments: validForm });
-  const formId = formResult.structuredContent.formId;
-  const waitPromise = client.callTool({
-    name: "askme_wait",
-    arguments: { formId },
-  });
-  await sleep(100);
-
-  const stale = await client.callTool({
-    name: "askme_submit",
-    arguments: { formId: "stale", message: "stale answer" },
-  });
-  assert.equal(stale.isError, true);
-  assert.match(stale.content[0].text, /no longer open/i);
-
-  const ok = await client.callTool({
-    name: "askme_submit",
-    arguments: {
-      formId,
-      message: "表单回答 · OK\n\n1. 触发入口 → A",
-    },
-  });
-  assert.notEqual(ok.isError, true);
-  const result = await waitPromise;
+test("tools/call accepts a valid form and tells the model to end its turn", async () => {
+  const result = await client.callTool({ name: "askme_form", arguments: validForm });
   assert.notEqual(result.isError, true);
-});
-
-test("askme_wait and askme_submit reject an unknown form id", async () => {
-  const wait = await client.callTool({
-    name: "askme_wait",
-    arguments: { formId: "missing" },
-  });
-  assert.equal(wait.isError, true);
-  assert.match(wait.content[0].text, /no longer open/i);
-
-  const submit = await client.callTool({
-    name: "askme_submit",
-    arguments: { formId: "missing", message: "y" },
-  });
-  assert.equal(submit.isError, true);
-  assert.match(submit.content[0].text, /no longer open/i);
-});
-
-test("a new askme_form replaces the open form and rejects the old waiter", async () => {
-  const first = await client.callTool({ name: "askme_form", arguments: validForm });
-  const firstId = first.structuredContent.formId;
-  const firstWait = client.callTool({
-    name: "askme_wait",
-    arguments: { formId: firstId },
-  });
-  await sleep(100);
-
-  const secondForm = { ...validForm, title: "Second form" };
-  const second = await client.callTool({ name: "askme_form", arguments: secondForm });
-  assert.notEqual(second.isError, true);
-  const secondId = second.structuredContent.formId;
-  assert.notEqual(secondId, firstId);
-
-  const firstResult = await firstWait;
-  assert.equal(firstResult.isError, true);
-  assert.match(firstResult.content[0].text, /replaced/i);
-
-  const waitPromise = client.callTool({
-    name: "askme_wait",
-    arguments: { formId: secondId },
-  });
-  await sleep(100);
-  await client.callTool({
-    name: "askme_submit",
-    arguments: {
-      formId: secondId,
-      message: "表单回答 · Second form\n\n1. 触发入口 → A",
-    },
-  });
-  const result = await waitPromise;
-  assert.notEqual(result.isError, true);
+  assert.equal(result.content[0].type, "text");
+  assert.match(result.content[0].text, /Form displayed with 3 questions/i);
+  assert.match(result.content[0].text, /end your turn/i);
+  assert.match(result.content[0].text, /plain text/i);
+  assert.equal(result.structuredContent.form.title, validForm.title);
+  assert.equal(result.structuredContent.form.questions.length, 3);
 });
 
 test("tools/call rejects more than 8 questions and asks the model to split", async () => {
@@ -335,7 +209,7 @@ test("tools/call rejects an unknown question type", async () => {
   assert.match(result.content[0].text, /type/i);
 });
 
-test("askme_form reports normalization notes before waiting", async () => {
+test("tools/call normalizes multiple recommendations on a single-choice question", async () => {
   const form = {
     title: "Recommendations",
     questions: [
@@ -352,40 +226,8 @@ test("askme_form reports normalization notes before waiting", async () => {
   };
   const result = await client.callTool({ name: "askme_form", arguments: form });
   assert.notEqual(result.isError, true);
-  assert.match(result.content[0].text, /askme_wait/);
   assert.match(result.content[0].text, /recommended/i);
   assert.match(result.content[0].text, /first/i);
-});
-
-test("cancelling askme_wait leaves the form open for a later submit", async () => {
-  const form = await client.callTool({ name: "askme_form", arguments: validForm });
-  const formId = form.structuredContent.formId;
-
-  const controller = new AbortController();
-  const waitPromise = client.callTool(
-    { name: "askme_wait", arguments: { formId } },
-    undefined,
-    { signal: controller.signal },
-  );
-  await sleep(100);
-  controller.abort();
-  await assert.rejects(waitPromise, /abort|cancel/i);
-
-  const submit = await client.callTool({
-    name: "askme_submit",
-    arguments: {
-      formId,
-      message: "表单回答 · late\n\n1. 触发入口 → A",
-    },
-  });
-  assert.notEqual(submit.isError, true);
-
-  const lateWait = await client.callTool({
-    name: "askme_wait",
-    arguments: { formId },
-  });
-  assert.notEqual(lateWait.isError, true);
-  assert.match(lateWait.content[0].text, /表单回答 · late/);
 });
 
 test("tools/call rejects an unknown tool", async () => {

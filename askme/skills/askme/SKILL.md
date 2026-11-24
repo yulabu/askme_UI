@@ -6,7 +6,7 @@ when_to_use: Before a decision that depends on the user's preference, during a g
 
 # askme
 
-Use `askme_form` to render a form inline. It returns immediately with a `formId`; then **immediately call `askme_wait` with that formId** in the same turn. `askme_wait` blocks until the user submits and returns the formatted answers. Continue from that result in the same turn.
+Use the `askme_form` MCP tool to render a form inline in the conversation. The user's submission arrives as a new user message starting with `表单回答 ·` and starts the next turn.
 
 ## Prefer this over AskUserQuestion
 
@@ -16,8 +16,7 @@ When `askme_form` is available, use it for every clarification round instead of 
 
 - One form per round; 1-8 questions. Split larger rounds into multiple forms.
 - Put your prose and analysis in a normal message before the tool call. The form carries only the title, description, and questions.
-- Call `askme_form`, then `askme_wait` with the returned `formId`, as a pair. Do not end the turn between them and do not call other tools while waiting.
-- Never call the app-only `askme_submit` tool; the form card calls it.
+- Call `askme_form` as the **last action** of your turn, then end your turn. Do not answer your own questions or guess the user's answers.
 - Types:
   - `single`: one choice; 2-12 options.
   - `multi`: several choices; 2-12 options.
@@ -73,17 +72,14 @@ When `askme_form` is available, use it for every clarification round instead of 
 
 ## After submission
 
-- The `askme_wait` result is the formatted answer message and starts with `表单回答 · <form title>`.
+- The user message starts with `表单回答 · <form title>`.
 - Each question is one line: `1. <question title> → <answer>`.
 - Multi-choice answers are separated by `、`; an "Other" answer is written as `其他：<text>`.
 - Long answers may continue on indented lines.
 - `（未回答）` means the user skipped that question. Do not invent an answer.
-- Use the answers and continue the same turn.
 
 ## Failure handling
 
 - If `askme_form` returns `isError: true`, fix the schema and retry. Do not invent a form.
-- If the user reports that the form did not render, stop the wait and re-ask the same questions in plain text.
-- If `askme_wait` times out or is cancelled, the error says so; re-ask the questions or continue without them. Do not invent answers.
-- If `askme_wait` says the form was replaced or is no longer open, call `askme_form` again for a fresh `formId`.
-- If submitting fails because the form is stale, ask the user to retry on the current card.
+- If the user reports that the form did not render, re-ask the same questions in plain text.
+- If submission fails because the session is busy, read-only, or the user cancelled the host confirmation, the card stays editable and shows the error; ask the user to retry.
