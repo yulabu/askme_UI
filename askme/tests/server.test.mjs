@@ -70,16 +70,15 @@ const validForm = {
   ],
 };
 
-test("tools/list exposes the form tool and the app-only submit tool", async () => {
+test("tools/list exposes the form, wait and app-only submit tools", async () => {
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 2);
+  assert.equal(tools.length, 3);
 
   const tool = tools.find((entry) => entry.name === "askme_form");
   assert.ok(tool);
   assert.match(tool.description, /AskUserQuestion/);
-  assert.match(tool.description, /last action/i);
-  assert.match(tool.description, /same turn/i);
-  assert.doesNotMatch(tool.description, /end your turn/i);
+  assert.match(tool.description, /askme_wait/);
+  assert.match(tool.description, /Do not end the turn/i);
   assert.equal(tool._meta?.ui?.resourceUri, CARD_URI);
   assert.equal(tool._meta?.ui?.preferredDisplayMode, "inline");
   assert.equal(tool._meta?.ui?.showInline, true);
@@ -90,6 +89,12 @@ test("tools/list exposes the form tool and the app-only submit tool", async () =
   assert.deepEqual(tool.inputSchema.required, ["title", "questions"]);
   assert.equal(tool.inputSchema.properties.questions.minItems, 1);
   assert.equal(tool.inputSchema.properties.questions.maxItems, 8);
+
+  const wait = tools.find((entry) => entry.name === "askme_wait");
+  assert.ok(wait);
+  assert.equal(wait._meta?.ui, undefined);
+  assert.equal(wait._meta?.["anthropic/alwaysLoad"], true);
+  assert.deepEqual(wait.inputSchema.required, ["formId"]);
 
   const submit = tools.find((entry) => entry.name === "askme_submit");
   assert.ok(submit);
@@ -127,15 +132,26 @@ test("resources/read returns self-contained HTML as text", async () => {
   assert.doesNotMatch(content.text, /\bnew Function\b/, "card must not build functions from strings");
 });
 
-test("askme_form waits for askme_submit and returns the formatted answers", async () => {
-  const formPromise = client.callTool({ name: "askme_form", arguments: validForm });
+test("askme_form returns a formId and askme_wait returns the submitted answers", async () => {
+  const formResult = await client.callTool({ name: "askme_form", arguments: validForm });
+  assert.notEqual(formResult.isError, true);
+  assert.match(formResult.content[0].text, /askme_wait/);
+  assert.match(formResult.content[0].text, /Do not end the turn/i);
+
+  const formId = formResult.structuredContent.formId;
+  assert.equal(formId, computeFormId(validForm));
+
+  const waitPromise = client.callTool({
+    name: "askme_wait",
+    arguments: { formId },
+  });
   await sleep(100);
 
   const message = "表单回答 · 第 1 轮：触发与形态\n\n1. 触发入口 → 两者都要";
   const submitResult = await client.callTool({
     name: "askme_submit",
     arguments: {
-      formId: computeFormId(validForm),
+      formId,
       message,
       answers: { q1: { value: "两者都要" } },
     },
@@ -143,16 +159,21 @@ test("askme_form waits for askme_submit and returns the formatted answers", asyn
   assert.notEqual(submitResult.isError, true);
   assert.match(submitResult.content[0].text, /Answers received/i);
 
-  const result = await formPromise;
-  assert.notEqual(result.isError, true);
-  assert.equal(result.content[0].type, "text");
-  assert.equal(result.content[0].text, message);
-  assert.equal(result.structuredContent.formId, computeFormId(validForm));
-  assert.equal(result.structuredContent.answers.q1.value, "两者都要");
+  const waitResult = await waitPromise;
+  assert.notEqual(waitResult.isError, true);
+  assert.equal(waitResult.content[0].type, "text");
+  assert.equal(waitResult.content[0].text, message);
+  assert.equal(waitResult.structuredContent.formId, formId);
+  assert.equal(waitResult.structuredContent.answers.q1.value, "两者都要");
 });
 
 test("askme_submit rejects a stale form id without closing the open form", async () => {
-  const formPromise = client.callTool({ name: "askme_form", arguments: validForm });
+  const formResult = await client.callTool({ name: "askme_form", arguments: validForm });
+  const formId = formResult.structuredContent.formId;
+  const waitPromise = client.callTool({
+    name: "askme_wait",
+    arguments: { formId },
+  });
   await sleep(100);
 
   const stale = await client.callTool({
@@ -165,39 +186,63 @@ test("askme_submit rejects a stale form id without closing the open form", async
   const ok = await client.callTool({
     name: "askme_submit",
     arguments: {
-      formId: computeFormId(validForm),
+      formId,
       message: "表单回答 · OK\n\n1. 触发入口 → A",
     },
   });
   assert.notEqual(ok.isError, true);
-  const result = await formPromise;
+  const result = await waitPromise;
   assert.notEqual(result.isError, true);
 });
 
-test("askme_submit rejects when no form is open", async () => {
-  const result = await client.callTool({
-    name: "askme_submit",
-    arguments: { formId: "x", message: "y" },
+test("askme_wait and askme_submit reject an unknown form id", async () => {
+  const wait = await client.callTool({
+    name: "askme_wait",
+    arguments: { formId: "missing" },
   });
-  assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /No Ask Me form/i);
+  assert.equal(wait.isError, true);
+  assert.match(wait.content[0].text, /no longer open/i);
+
+  const submit = await client.callTool({
+    name: "askme_submit",
+    arguments: { formId: "missing", message: "y" },
+  });
+  assert.equal(submit.isError, true);
+  assert.match(submit.content[0].text, /no longer open/i);
 });
 
-test("askme_form rejects a second form while one is open", async () => {
-  const first = client.callTool({ name: "askme_form", arguments: validForm });
+test("a new askme_form replaces the open form and rejects the old waiter", async () => {
+  const first = await client.callTool({ name: "askme_form", arguments: validForm });
+  const firstId = first.structuredContent.formId;
+  const firstWait = client.callTool({
+    name: "askme_wait",
+    arguments: { formId: firstId },
+  });
   await sleep(100);
-  const second = await client.callTool({ name: "askme_form", arguments: validForm });
-  assert.equal(second.isError, true);
-  assert.match(second.content[0].text, /already open/i);
 
+  const secondForm = { ...validForm, title: "Second form" };
+  const second = await client.callTool({ name: "askme_form", arguments: secondForm });
+  assert.notEqual(second.isError, true);
+  const secondId = second.structuredContent.formId;
+  assert.notEqual(secondId, firstId);
+
+  const firstResult = await firstWait;
+  assert.equal(firstResult.isError, true);
+  assert.match(firstResult.content[0].text, /replaced/i);
+
+  const waitPromise = client.callTool({
+    name: "askme_wait",
+    arguments: { formId: secondId },
+  });
+  await sleep(100);
   await client.callTool({
     name: "askme_submit",
     arguments: {
-      formId: computeFormId(validForm),
-      message: "表单回答 · Another\n\n1. 触发入口 → A",
+      formId: secondId,
+      message: "表单回答 · Second form\n\n1. 触发入口 → A",
     },
   });
-  const result = await first;
+  const result = await waitPromise;
   assert.notEqual(result.isError, true);
 });
 
@@ -290,7 +335,7 @@ test("tools/call rejects an unknown question type", async () => {
   assert.match(result.content[0].text, /type/i);
 });
 
-test("askme_form reports normalization notes with the answers", async () => {
+test("askme_form reports normalization notes before waiting", async () => {
   const form = {
     title: "Recommendations",
     questions: [
@@ -305,40 +350,42 @@ test("askme_form reports normalization notes with the answers", async () => {
       },
     ],
   };
-  const formPromise = client.callTool({ name: "askme_form", arguments: form });
-  await sleep(100);
-  await client.callTool({
-    name: "askme_submit",
-    arguments: {
-      formId: computeFormId(form),
-      message: "表单回答 · Recommendations\n\n1. Pick one → A",
-    },
-  });
-
-  const result = await formPromise;
+  const result = await client.callTool({ name: "askme_form", arguments: form });
   assert.notEqual(result.isError, true);
-  assert.match(result.content[0].text, /表单回答/);
+  assert.match(result.content[0].text, /askme_wait/);
   assert.match(result.content[0].text, /recommended/i);
   assert.match(result.content[0].text, /first/i);
 });
 
-test("cancelling the form clears the pending submission", async () => {
+test("cancelling askme_wait leaves the form open for a later submit", async () => {
+  const form = await client.callTool({ name: "askme_form", arguments: validForm });
+  const formId = form.structuredContent.formId;
+
   const controller = new AbortController();
-  const formPromise = client.callTool(
-    { name: "askme_form", arguments: validForm },
+  const waitPromise = client.callTool(
+    { name: "askme_wait", arguments: { formId } },
     undefined,
     { signal: controller.signal },
   );
   await sleep(100);
   controller.abort();
-  await assert.rejects(formPromise, /abort|cancel/i);
+  await assert.rejects(waitPromise, /abort|cancel/i);
 
   const submit = await client.callTool({
     name: "askme_submit",
-    arguments: { formId: computeFormId(validForm), message: "late answer" },
+    arguments: {
+      formId,
+      message: "表单回答 · late\n\n1. 触发入口 → A",
+    },
   });
-  assert.equal(submit.isError, true);
-  assert.match(submit.content[0].text, /No Ask Me form/i);
+  assert.notEqual(submit.isError, true);
+
+  const lateWait = await client.callTool({
+    name: "askme_wait",
+    arguments: { formId },
+  });
+  assert.notEqual(lateWait.isError, true);
+  assert.match(lateWait.content[0].text, /表单回答 · late/);
 });
 
 test("tools/call rejects an unknown tool", async () => {

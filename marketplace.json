@@ -4,7 +4,7 @@
     {
       "name": "askme",
       "source": "./askme",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Interactive inline question forms for ZCode",
       "displayName": "Ask Me",
       "displayName_i18n": {

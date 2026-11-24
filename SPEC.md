@@ -1,6 +1,6 @@
 # askme — 内联交互表单提问插件
 
-状态：Implemented v0.2.0（阻塞式提交，实机待验）
+状态：Implemented v0.2.1（form + wait 两段式，实机待验）
 版本：0.1
 日期：2026-11-24
 
@@ -18,7 +18,7 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 
 - agent 传入声明式表单 schema，工具在消息流内联渲染一张 HTML 卡片。
 - 卡片支持单选（含「其他」）、多选（含「其他」）、短文本、长文本、必答标记、推荐徽标、一键采纳推荐、部分提交、提交后只读折叠、深浅色主题、草稿持久化。
-- 提交时卡片调用 app-only 的 `askme_submit`；`askme_form` 工具保持打开，收到答案后把格式化 Markdown 作为工具结果返回，agent 在同一轮继续。不调用 `sendFollowUpMessage`，因此不会触发宿主确认框。
+- 提交时卡片调用 app-only 的 `askme_submit`；`askme_form` 立即返回 `formId` 并渲染卡片，agent 紧接着调用 `askme_wait` 阻塞等待；提交后 `askme_wait` 返回格式化 Markdown，agent 在同一轮继续。不调用 `sendFollowUpMessage`，因此不会触发宿主确认框。
 - 插件自带 skill，声明「需要向用户提问时优先使用」；并在 grilling 技能中加一行委托，使 `/grill-me` 自动改用表单。
 - 一条用户级全局偏好（`~/.zcode/AGENTS.md`）兜底，让 agent 全面优先使用该工具；宿主强制的权限确认、plan 审批仍走内置流程。
 
@@ -108,15 +108,16 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 - HTML 资源 MIME 为 `text/html;profile=mcp-app`，必须以 `text` 返回，不能是 blob；单次读取总量不超过宿主 8 MiB 限制。
 - 卡片优先从 `window.zcode.toolInput` 读取表单 schema；若该通知晚到或缺失，回退到 `toolOutput.form`（服务端返回的 `structuredContent`）；答案不经过 server 中继，不维护服务端会话状态。
 
-### Blocking Tool Model
+### Form + Wait Model
 
-- `askme_form` 调用后保持打开；卡片渲染，agent 本轮暂停等待。
-- 用户提交时，卡片调用 app-only 的 `askme_submit`，服务端解析当前 pending form，`askme_form` 把格式化答案作为工具结果返回。
-- agent 在同一轮继续使用答案；不存在「工具立即返回、答案作为新用户消息」的异步轮次。
-- 不使用 `sendFollowUpMessage`；不会触发宿主的「插件想以你的身份发送消息」确认框。
-- manifest 的 MCP `timeoutMs` 设为 600000（10 分钟）；服务端 9.5 分钟兜底超时；每 15 秒发送一次 progress 心跳，宿主 `resetTimeoutOnProgress` 会续期。
-- 宿主停止/取消该轮时，`extra.signal` 中止等待；服务端清理 pending form，卡片显示失效。
-- 同一时刻只允许一个 pending form；第二个 `askme_form` 返回「already open」错误。
+- 宿主只有在工具调用返回后才会加载内联卡片；因此 `askme_form` 必须立即返回，不能自己阻塞。
+- `askme_form` 校验表单、创建当前表单记录，立即返回 `formId`；卡片从 `toolInput` 渲染。
+- agent 必须在同一轮紧接着调用 `askme_wait(formId)`；该工具阻塞，直到用户提交。
+- 用户提交时，卡片调用 app-only 的 `askme_submit`；服务端匹配 formId，`askme_wait` 返回格式化答案作为工具结果。
+- agent 在同一轮继续；不存在「答案作为新用户消息」的异步轮次，也不使用 `sendFollowUpMessage`，因此没有确认框。
+- manifest 的 MCP `timeoutMs` 设为 600000（10 分钟）；`askme_wait` 9.5 分钟兜底；每 15 秒发送一次 progress 心跳，宿主 `resetTimeoutOnProgress` 会续期。
+- 宿主停止/取消 `askme_wait` 时，`extra.signal` 中止等待；表单记录保留，用户仍可提交，之后的 `askme_wait` 可立即取回。
+- 新的 `askme_form` 会替换当前表单并拒绝旧的 waiter；旧卡片提交会得到 stale formId 错误。
 
 ### Tool Contract
 
@@ -160,12 +161,14 @@ type Option = {
 
 提交契约：
 
+- `askme_form` 立即返回 `structuredContent: { formId, questionCount }`，并提示 agent 立刻调用 `askme_wait`。
+- `askme_wait` 是模型可见工具，输入 `{ formId }`，无 UI 资源；它保持 pending，直到 `askme_submit` 提交。
 - 卡片提交调用 app-only 工具 `askme_submit`；`_meta.ui.visibility: ["app"]`，模型不可见。
-- 输入 `{ formId, message, answers? }`；`formId` 是表单签名（title + question id/title/type/option labels）的 FNV-1a 哈希；`message` 是卡片格式化的答案文本。
-- `askme_form` 保持 pending；`askme_submit` 匹配 formId 后解析。成功时 `askme_form` 返回答案文本和 `structuredContent: { formId, answers }`；错误、超时、取消返回 `isError`。
-- 同一时刻只允许一个 pending form；错误 formId 不会关闭当前表单。
+- `askme_submit` 输入 `{ formId, message, answers? }`；`formId` 是表单签名（title + question id/title/type/option labels）的 FNV-1a 哈希；`message` 是卡片格式化的答案文本。
+- 匹配 formId 后，`askme_wait` 返回答案文本和 `structuredContent: { formId, answers }`；错误、超时、取消返回 `isError`。
+- 错误 formId 不会关闭当前表单；新的 `askme_form` 会替换当前表单并使旧 formId 失效。
 - 结果文本上限 30 KiB，超出截断并注明。
-- manifest 的 `mcpServers.askme.timeoutMs` 为 600000；服务端内部等待上限 9.5 分钟，每 15 秒发送 progress 心跳。
+- manifest 的 `mcpServers.askme.timeoutMs` 为 600000；`askme_wait` 内部等待上限 9.5 分钟，每 15 秒发送 progress 心跳。
 
 ### Card Behavior
 
@@ -220,7 +223,7 @@ type Option = {
 
 ### Trigger & Priority
 
-- 工具描述明确写出：需要向用户提澄清问题时优先使用，替代内置 `AskUserQuestion`；调用后等待工具结果，在同一轮继续。
+- 工具描述明确写出：需要向用户提澄清问题时优先使用，替代内置 `AskUserQuestion`；调用 `askme_form` 后必须在同一轮立即调用 `askme_wait`。
 - 插件 skill 自动触发，规定使用场景、schema 生成规则、一轮一表单、最后动作、失败降级。
 - `grilling` 技能加一行委托：若 `askme_form` 可用，则把整轮问题合并为一次工具调用，保留原有问题、选项与推荐；工具等待提交并在同一轮返回答案。
 - 用户级全局偏好写入 `~/.zcode/AGENTS.md`（ZCode 唯一加载的用户级指令文件；当前不存在，需要新建；单文件上限 100 KiB）：需要向用户提澄清问题时优先使用 `askme_form`。
@@ -231,7 +234,7 @@ type Option = {
 
 ### Failure Handling
 
-- 卡片未渲染或用户反馈看不到表单时，`askme_form` 会保持 pending；用户可停止该轮，agent 改用纯文本重新提问。工具描述和 skill 都提示了这条降级路径。
+- 卡片未渲染或用户反馈看不到表单时，`askme_wait` 会保持 pending；用户可停止该轮，agent 改用纯文本重新提问。`askme_form` 的结果文本和 skill 都提示了这条降级路径。
 - 提交失败（formId 过期、超时、用户取消、服务端错误）时，卡片保持可编辑并展示具体错误；用户可重试或让 agent 重新发题。
 - 工具参数校验失败时，不渲染卡片，返回结构化错误信息，agent 修正 schema 后重试。
 - 同一时刻只允许一个 pending form；第二个 `askme_form` 返回错误，agent 等当前表单结束。
@@ -269,7 +272,7 @@ type Option = {
 - `tools/list` 暴露 `askme_form` 和 app-only 的 `askme_submit`；`askme_form` 描述包含「优先于内置提问」「等待结果」「同一轮」。
 - `resources/list` 包含卡片资源，MIME 为 `text/html;profile=mcp-app`。
 - `resources/read` 返回 HTML 文本（非 blob），大小在限制内，内容包含卡片脚本。
-- `askme_form` 保持 pending，直到 `askme_submit` 用匹配的 formId 提交；结果文本等于提交的答案，`structuredContent` 包含 `{formId, answers}`。
+- `askme_form` 立即返回 `{formId, questionCount}`；`askme_wait` 保持 pending，直到 `askme_submit` 用匹配的 formId 提交；`askme_wait` 结果文本等于提交的答案，`structuredContent` 包含 `{formId, answers}`。
 - `askme_submit` 的错误 formId 不关闭当前表单；无 pending form 时返回错误；第二个 `askme_form` 返回「already open」。
 - 取消 `askme_form` 请求会清理 pending form；后续 `askme_submit` 返回无表单。
 - manifest 的 MCP `timeoutMs` ≥ 300000。
@@ -294,7 +297,7 @@ type Option = {
 ### Manual Acceptance
 
 - 新会话中 agent 主动调用 `askme_form`，卡片内联出现。
-- 点击提交后，`askme_form` 工具结果返回格式化答案，agent 在同一轮继续；不出现用户消息气泡或确认框。
+- 点击提交后，`askme_wait` 的工具结果返回格式化答案，agent 在同一轮继续；不出现用户消息气泡或确认框。
 - 表单等待期间卡片保持可交互；宿主停止该轮后卡片显示失效，agent 收到取消/超时错误。
 - `/grill-me` 在插件启用时出表单，禁用时保持纯文本。
 - 8 题表单在窄窗口、深色模式下可读且无内部滚动。
@@ -323,8 +326,9 @@ type Option = {
 
 - ZCode Desktop 4.0.0 存在两套 HTML UI 机制：工具级内联 MCP App 卡片，以及插件 manifest 的 `ui.surfaces` 侧栏面板。
 - 侧栏面板的宿主能力明确关闭了 `sendFollowUpMessage`、`updateModelContext`、`setWidgetState`；内联卡片仍是唯一符合需求的形态。
-- `sendFollowUpMessage` 需要 5 秒内的 user gesture；iframe 内的点击不被宿主记账，因此会弹「插件想以你的身份发送消息」确认框，且没有 skip 参数或设置。0.2.0 因此改用「阻塞工具 + app-only `askme_submit`」，完全不走 `sendFollowUpMessage`。
-- 宿主 MCP `callTool` 默认超时 30 秒，但支持 `timeoutMs` 配置与 `resetTimeoutOnProgress`；0.2.0 在 manifest 设 10 分钟并每 15 秒发 progress 心跳。
+- `sendFollowUpMessage` 需要 5 秒内的 user gesture；iframe 内的点击不被宿主记账，因此会弹「插件想以你的身份发送消息」确认框，且没有 skip 参数或设置。0.2.1 因此改用「askme_form 立即返回 + `askme_wait` 阻塞 + app-only `askme_submit`」，完全不走 `sendFollowUpMessage`。
+- 宿主只有在工具调用返回后才加载内联卡片。0.2.0 让 `askme_form` 自己阻塞，导致卡片停在「正在加载插件界面」；0.2.1 拆成 form（立即返回）和 wait（阻塞）两次调用。
+- 宿主 MCP `callTool` 默认超时 30 秒，但支持 `timeoutMs` 配置与 `resetTimeoutOnProgress`；0.2.1 在 manifest 设 10 分钟，并在 `askme_wait` 每 15 秒发 progress 心跳。
 - 宿主没有「工具阻塞等待 HTML 提交」的机制；MCP elicitation 是宿主原生表单，不满足自绘 HTML 需求。
 - 卡片资源必须返回 `text`，不能是 blob；单次资源读取总量上限 8 MiB；widget state 上限 16 KiB；follow-up prompt 上限 64 KiB。
 - 宿主沙箱 CSP 默认 `default-src 'none'`，外部 CDN/字体不可依赖；因此卡片必须自包含。
@@ -334,11 +338,12 @@ type Option = {
 - 用户级指令只加载 `~/.zcode/AGENTS.md`；工作区级从 cwd 向上到 git 根查找同名文件。不存在 `CLAUDE.md` / `ZCODE.md` / `.zcode/rules` 的加载路径。
 - Skill frontmatter 允许 `name`、`description`、`when_to_use`、`license`、`metadata`；`description` 对插件 skill 必填；隐式调用恒允许，没有关闭开关。
 
-- 实机 0.1.0 已验证：不声明 `ui.surfaces` 时内联卡片能渲染；0.1.1 修了 tool input 晚到导致的误报；0.2.0 改为阻塞式提交，以消除宿主确认弹窗。
+- 实机 0.1.0 已验证：不声明 `ui.surfaces` 时内联卡片能渲染；0.1.1 修了 tool input 晚到导致的误报；0.2.0 的自阻塞会导致卡片加载死锁；0.2.1 改为 form + wait 两段式。
 
 ### 待验证事项
 
-- 宿主对 10 分钟阻塞工具调用的实际表现：progress 心跳是否续期、停止按钮能否取消、等待期间卡片是否保持可交互。
+- 宿主对 10 分钟 `askme_wait` 的实际表现：progress 心跳是否续期、停止按钮能否取消、等待期间卡片是否保持可交互。
+- form + wait 两段式在真实 agent 循环中是否稳定：`askme_form` 返回后模型是否立即调用 `askme_wait`。
 - app-only 的 `askme_submit` 是否能从卡片内正常调用（不在模型工具列表里）。
 - 同一资源多次调用是否复用 widget 实例；若旧卡片被新调用改写，需要调整卡片实例隔离或降级策略。
 - 插件 MCP server 在模型工具列表中的准确名称与 `alwaysLoad` 生效方式（安装后以实际列表为准）。
