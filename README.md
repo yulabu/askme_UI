@@ -86,7 +86,7 @@ cd /Users/yulabu/Code/askme_UI   # 仓库根
 npm install
 npm run build                    # 生成 askme/dist/server.mjs 和 askme/dist/ui/card.html
 npm test                         # MCP 协议测试（12 项）
-npm run test:ui                  # 卡片 UI 测试（21 项，Playwright）
+npm run test:ui                  # 卡片 UI 测试（23 项，Playwright）
 ```
 
 - 开发依赖在仓库根，`askme/` 目录本身不含 `node_modules`；安装时只复制约 800KB 的插件源码与构建产物。
@@ -104,13 +104,18 @@ npm run test:ui                  # 卡片 UI 测试（21 项，Playwright）
 
 ## 已知待实测
 
-以下三点只能在 ZCode 实机里验证，代码与 mock 测试无法覆盖：
-
-- 不声明 `ui.surfaces` 时，工具级内联卡片能否正常渲染。
 - 提交点击是否被宿主视为 user gesture；若不算，每次提交会多一个确认框。
 - 同一资源多次调用时，旧卡片是否会被新调用改写。
 
+实机 0.1.0 已经验证：不声明 `ui.surfaces` 时内联卡片能渲染。当时的问题是宿主的 tool input 通知晚于卡片启动，0.1.1 已改为「先订阅 + `toolOutput.form` 兜底 + 5 秒超时」，需要实机复测。
+
 如果实机验证发现差异，优先改卡片与 manifest，不改需求。
+
+## 更新
+
+1. 修改源码后，同时提升 `package.json`、`askme/.zcode-plugin/plugin.json`、`marketplace.json` 的版本号；`npm run build` 会校验三者一致。
+2. 插件市场 → 市场源 → 刷新 `dev-askme-ui` → 插件详情 → 更新。
+3. 新建任务验证。源码编辑不是热重载，已安装的旧任务不会自动换代码。
 
 ## 回退
 

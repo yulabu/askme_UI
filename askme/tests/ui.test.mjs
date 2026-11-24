@@ -81,6 +81,7 @@ async function openCard(options = {}) {
     variables = {},
     htmlTheme = null,
     gate = false,
+    output = null,
   } = options;
 
   const context = await browser.newContext({ colorScheme: theme || "light" });
@@ -89,7 +90,7 @@ async function openCard(options = {}) {
   page.on("request", (request) => requests.push(request.url()));
 
   await page.addInitScript(
-    ({ form, state, theme, reject, variables, gate }) => {
+    ({ form, state, theme, reject, variables, gate, output }) => {
       window.__mock = {
         state,
         sent: [],
@@ -98,11 +99,26 @@ async function openCard(options = {}) {
         gate,
         pending: null,
         release: null,
+        form,
+        output,
+        subscribers: [],
+      };
+      window.__mock.setToolInput = (next) => {
+        window.__mock.form = next;
+        for (const subscriber of window.__mock.subscribers) subscriber();
+      };
+      window.__mock.setToolOutput = (next) => {
+        window.__mock.output = next;
+        for (const subscriber of window.__mock.subscribers) subscriber();
       };
       window.zcode = {
         ready: Promise.resolve(),
-        toolInput: form,
-        toolOutput: null,
+        get toolInput() {
+          return window.__mock.form;
+        },
+        get toolOutput() {
+          return window.__mock.output;
+        },
         toolCancelled: false,
         theme: theme || undefined,
         hostContext: {
@@ -129,10 +145,13 @@ async function openCard(options = {}) {
           window.__mock.sent.push(prompt);
         },
         notifyIntrinsicHeight: () => {},
-        subscribe: () => () => {},
+        subscribe: (subscriber) => {
+          window.__mock.subscribers.push(subscriber);
+          return () => {};
+        },
       };
     },
-    { form, state, theme, reject, variables, gate },
+    { form, state, theme, reject, variables, gate, output },
   );
 
   if (htmlTheme) {
@@ -145,6 +164,11 @@ async function openCard(options = {}) {
     await page.goto(cardUrl);
   }
   await page.waitForSelector('[data-testid="askme-card"]');
+  if (form || output) {
+    await page.waitForSelector(
+      '[data-testid="askme-title"], [data-testid="submitted"]',
+    );
+  }
   return { context, page, requests };
 }
 
@@ -495,6 +519,30 @@ test("keeps keyboard focus after a radio selection", async () => {
     await page.keyboard.press("ArrowDown");
     assert.equal(await page.evaluate(() => document.activeElement?.value), "B 选项");
     assert.equal(await page.locator('[data-testid="option-q1-1"] input').isChecked(), true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("waits for a late tool-input notification instead of failing", async () => {
+  const { context, page } = await openCard({ form: null });
+  try {
+    assert.match(await page.textContent('[data-testid="askme-card"]'), /加载表单/);
+    await page.evaluate((form) => window.__mock.setToolInput(form), sampleForm);
+    await page.waitForSelector('[data-testid="askme-title"]');
+    assert.equal(await page.textContent('[data-testid="askme-title"]'), "测试表单");
+  } finally {
+    await context.close();
+  }
+});
+
+test("uses structured tool output when tool input is missing", async () => {
+  const { context, page } = await openCard({
+    form: null,
+    output: { form: sampleForm },
+  });
+  try {
+    assert.equal(await page.textContent('[data-testid="askme-title"]'), "测试表单");
   } finally {
     await context.close();
   }

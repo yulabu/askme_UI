@@ -368,6 +368,9 @@ async function main() {
 
     return {
       content: [{ type: "text", text }],
+      // The card also reads the form from toolOutput.form, so it can render
+      // even if ui/notifications/tool-input arrives later or not at all.
+      structuredContent: { form: result.normalized },
     };
   });
 

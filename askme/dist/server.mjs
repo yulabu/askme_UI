@@ -17354,7 +17354,10 @@ Notes:
 - ${result.notes.join("\n- ")}`;
     }
     return {
-      content: [{ type: "text", text }]
+      content: [{ type: "text", text }],
+      // The card also reads the form from toolOutput.form, so it can render
+      // even if ui/notifications/tool-input arrives later or not at all.
+      structuredContent: { form: result.normalized }
     };
   });
   const transport = new StdioServerTransport();

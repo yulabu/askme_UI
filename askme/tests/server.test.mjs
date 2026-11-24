@@ -116,6 +116,8 @@ test("tools/call accepts a valid form and tells the model to end its turn", asyn
   assert.match(result.content[0].text, /Form displayed with 3 questions/i);
   assert.match(result.content[0].text, /end your turn/i);
   assert.match(result.content[0].text, /plain text/i);
+  assert.equal(result.structuredContent.form.title, validForm.title);
+  assert.equal(result.structuredContent.form.questions.length, 3);
 });
 
 test("tools/call rejects more than 8 questions and asks the model to split", async () => {

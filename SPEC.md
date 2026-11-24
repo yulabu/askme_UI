@@ -1,6 +1,6 @@
 # askme — 内联交互表单提问插件
 
-状态：Implemented v0.1.0（实机安装待验）
+状态：Implemented v0.1.1（实机提交待验）
 版本：0.1
 日期：2026-11-24
 
@@ -106,7 +106,7 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 - 工具通过 `_meta.ui.resourceUri` 指向 HTML 资源，并设置 `preferredDisplayMode: "inline"` 与 `showInline: true`，确保卡片出现在消息流。
 - 工具对模型可见（`visibility: ["model"]`）；不需要 app-only 工具。
 - HTML 资源 MIME 为 `text/html;profile=mcp-app`，必须以 `text` 返回，不能是 blob；单次读取总量不超过宿主 8 MiB 限制。
-- 卡片只从 `window.zcode.toolInput` 读取表单 schema；答案不经过 server 中继，不维护服务端会话状态。
+- 卡片优先从 `window.zcode.toolInput` 读取表单 schema；若该通知晚到或缺失，回退到 `toolOutput.form`（服务端返回的 `structuredContent`）；答案不经过 server 中继，不维护服务端会话状态。
 
 ### Async Turn Model
 
@@ -157,6 +157,7 @@ type Option = {
 
 ### Card Behavior
 
+- 启动时序：先订阅宿主更新，再等待 `toolInput`；tool input 晚到时保持加载态并等待，不立即报错；5 秒内仍未收到且无 `toolOutput.form` 才显示错误。
 - 控件：原生 radio/checkbox/input/textarea，使用 `fieldset` + `legend`，保留键盘操作与可见焦点。
 - 「其他」在单选和多选中都是追加选项；选中后显示文本框；文本为空时记为「其他（未填写）」。
 - 「采纳全部推荐」只作用于选择型：单选选中推荐项，多选在保留已选项的基础上勾选全部推荐项；文本型只保留 placeholder，不填值。
@@ -255,7 +256,7 @@ type Option = {
 - `tools/list` 只暴露 `askme_form`，描述包含「优先于内置提问」和「本轮最后动作」，`_meta.ui.resourceUri` 正确。
 - `resources/list` 包含卡片资源，MIME 为 `text/html;profile=mcp-app`。
 - `resources/read` 返回 HTML 文本（非 blob），大小在限制内，内容包含卡片脚本。
-- `tools/call` 合法 schema 返回成功结果与内联渲染元数据。
+- `tools/call` 合法 schema 返回成功结果、内联渲染元数据及 `structuredContent.form`。
 - 工具带 `readOnlyHint: true` 注解（不修改工作区），不影响交互语义。
 - `tools/call` 非法 schema（>8 题、重复 id、保留 id、保留 label、选择型缺选项、非法类型）返回可读错误和结构化错误数据，且不渲染卡片。
 - 未知方法/工具返回标准 JSON-RPC 错误。
@@ -263,7 +264,7 @@ type Option = {
 
 ### UI Tests
 
-- 从 `toolInput` 渲染标题、说明、题目顺序与四种控件（含独立的短文本用例）。
+- 从 `toolInput` 渲染标题、说明、题目顺序与四种控件（含独立的短文本用例）；`toolInput` 晚到时等待，缺失时回退到 `toolOutput.form`。
 - 单选/多选 + 「其他」输入：选中、输入、取消的取值正确；多选「其他」可勾选后再取消。
 - 推荐徽标显示；「采纳全部推荐」正确选中单选/多选项、保留已有多选、且不改写文本输入。
 - 必答未答时显示提示但允许提交；空「其他」视为未答；答案消息标记「（未回答）」或「其他（未填写）」。
@@ -316,10 +317,11 @@ type Option = {
 - 用户级指令只加载 `~/.zcode/AGENTS.md`；工作区级从 cwd 向上到 git 根查找同名文件。不存在 `CLAUDE.md` / `ZCODE.md` / `.zcode/rules` 的加载路径。
 - Skill frontmatter 允许 `name`、`description`、`when_to_use`、`license`、`metadata`；`description` 对插件 skill 必填；隐式调用恒允许，没有关闭开关。
 
+- 实机 0.1.0 已验证：不声明 `ui.surfaces` 时内联卡片能渲染；暴露的问题是 tool input 通知晚于卡片启动，0.1.1 通过「先订阅 + `toolOutput.form` 兜底 + 5 秒超时」修复。
+
 ### 待验证事项
 
-- 不声明 `ui.surfaces` 时，工具级内联卡片是否仍能正常渲染（预期可以；若不行，加最小 surface 兜底）。
-- 点击提交是否被宿主视为 user gesture；若不算，宿主确认框会每次出现，需要把按钮文案改成「提交并确认」。
+- 提交点击是否被宿主视为 user gesture；若不算，每次提交会多一个确认框。
 - 同一资源多次调用是否复用 widget 实例；若旧卡片被新调用改写，需要调整卡片实例隔离或降级策略。
 - 插件 MCP server 在模型工具列表中的准确名称与 `alwaysLoad` 生效方式（安装后以实际列表为准）。
 - `grilling` 技能一行委托的具体措辞，确保不破坏原有轮次格式。
@@ -328,7 +330,7 @@ type Option = {
 
 - **无官方文档**：以构建产物 + 实机验证为准，预留 1–2 轮修正。
 - **gesture 不确定性**：保留宿主确认框路径，失败可取消且不丢答案。
-- **widget 复用**：卡片以 `toolInput` 为唯一数据源，form id 隔离草稿；必要时改用独立 surface。
+- **widget 复用**：卡片以 `toolInput` 为主、`toolOutput.form` 兜底，form id 隔离草稿；必要时改用独立 surface。
 - **内置工具竞争**：工具描述 + skill + `~/.zcode/AGENTS.md` 三层软约束；接受偶发降级。若实测仍频繁走内置，再评估启用 `PermissionRequest` hook 硬化。
 - **安装/更新摩擦**：本地市场 + 版本号递增；README 记录步骤。
 
@@ -342,7 +344,9 @@ type Option = {
 - [x] 全局偏好文件位置确认（`~/.zcode/AGENTS.md`）
 - [x] 测试 seam 与用户确认
 - [x] grilling 一行委托获批
-- [ ] 本地 marketplace 与安装步骤实测
+- [x] 本地 marketplace 与安装步骤实测
+- [x] 实机内联渲染（0.1.0 截图验证）
+- [ ] 实机提交与 `/grill-me` 验收
 - [x] server 协议测试（12/12）
-- [x] 卡片 UI 测试（21/21）
+- [x] 卡片 UI 测试（23/23）
 - [x] ZCode Helper 启动验证

@@ -568,6 +568,22 @@
           };
         }
 
+        function formSignature(form) {
+          return JSON.stringify({
+            title: oneLine(form && form.title),
+            questions: Array.isArray(form && form.questions)
+              ? form.questions.map((question) => ({
+                  id: question.id,
+                  title: oneLine(question.title),
+                  type: question.type,
+                  options: Array.isArray(question.options)
+                    ? question.options.map((option) => oneLine(option.label))
+                    : [],
+                }))
+              : [],
+          });
+        }
+
         function el(tag, props = {}, children = []) {
           const node = document.createElement(tag);
           for (const [key, value] of Object.entries(props)) {
@@ -783,7 +799,7 @@
             return;
           }
           state.form = normalizeForm(form);
-          state.formId = hashString(JSON.stringify(form));
+          state.formId = hashString(formSignature(form));
           state.answers = {};
           state.submitting = false;
           state.submitted = false;
@@ -1222,7 +1238,45 @@
           }
         }
 
+        let waitTimer = 0;
+
+        function readForm() {
+          if (!host) return null;
+          if (host.toolInput) return host.toolInput;
+          const output = host.toolOutput;
+          if (output && output.form && typeof output.form === "object") {
+            return output.form;
+          }
+          return null;
+        }
+
+        function handleHostUpdate() {
+          if (!host) return;
+          const next = readForm();
+          if (!next) {
+            state.toolCancelled = Boolean(host.toolCancelled);
+            applyTheme();
+            return;
+          }
+          window.clearTimeout(waitTimer);
+          const nextId = hashString(formSignature(next));
+          if (nextId !== state.formId) {
+            init(next);
+          } else {
+            state.toolCancelled = Boolean(host.toolCancelled);
+            applyTheme();
+            render();
+          }
+        }
+
         async function boot() {
+          // Subscribe before reading toolInput: the host delivers the tool
+          // arguments through an async notification, which can arrive after
+          // `ready` resolves.
+          if (host && typeof host.subscribe === "function") {
+            host.subscribe(handleHostUpdate);
+          }
+
           try {
             if (host && host.ready && typeof host.ready.then === "function") {
               await host.ready;
@@ -1232,32 +1286,20 @@
             return;
           }
 
-          let form = host && host.toolInput;
-          if (!form) {
-            if (isPreview) {
-              form = previewForm;
-            } else {
+          if (state.form) return;
+
+          let form = readForm();
+          if (!form && isPreview) form = previewForm;
+          if (form) {
+            init(form);
+            return;
+          }
+
+          waitTimer = window.setTimeout(() => {
+            if (!state.form) {
               renderFatal("表单数据未加载，请让 agent 重新生成。");
-              return;
             }
-          }
-
-          init(form);
-
-          if (host && typeof host.subscribe === "function") {
-            host.subscribe(() => {
-              const next = host.toolInput;
-              if (!next) return;
-              const nextId = hashString(JSON.stringify(next));
-              if (nextId !== state.formId) {
-                init(next);
-              } else {
-                state.toolCancelled = Boolean(host.toolCancelled);
-                applyTheme();
-                render();
-              }
-            });
-          }
+          }, 5000);
         }
 
         if (window.ResizeObserver) {
