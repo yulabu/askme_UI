@@ -17039,7 +17039,7 @@ var StdioServerTransport = class {
   }
 };
 
-// src/server/main.mjs
+// askme/src/server/main.mjs
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

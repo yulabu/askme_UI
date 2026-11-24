@@ -82,13 +82,14 @@ askme_UI/
 ## 开发
 
 ```bash
-cd askme
+cd /Users/yulabu/Code/askme_UI   # 仓库根
 npm install
-npm run build          # 生成 dist/server.mjs 和 dist/ui/card.html
-npm test               # MCP 协议测试（12 项）
-npm run test:ui        # 卡片 UI 测试（21 项，Playwright）
+npm run build                    # 生成 askme/dist/server.mjs 和 askme/dist/ui/card.html
+npm test                         # MCP 协议测试（12 项）
+npm run test:ui                  # 卡片 UI 测试（21 项，Playwright）
 ```
 
+- 开发依赖在仓库根，`askme/` 目录本身不含 `node_modules`；安装时只复制约 800KB 的插件源码与构建产物。
 - UI 测试优先使用 Playwright 自带的 Chromium；没装时自动回退到系统 Microsoft Edge / Chrome。若要安装 Chromium：`npx playwright install chromium`。
 - 本地预览卡片：直接用浏览器打开 `askme/dist/ui/card.html`。没有 `window.zcode` 时会进入预览模式，提交只输出到控制台。
 - 构建产物已提交到仓库，安装时不需要 `node_modules`，也不需要构建。

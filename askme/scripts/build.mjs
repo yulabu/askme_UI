@@ -13,7 +13,7 @@ const manifest = JSON.parse(
   await readFile(join(pluginRoot, ".zcode-plugin", "plugin.json"), "utf8"),
 );
 const packageJson = JSON.parse(
-  await readFile(join(pluginRoot, "package.json"), "utf8"),
+  await readFile(join(pluginRoot, "..", "package.json"), "utf8"),
 );
 const marketplace = JSON.parse(
   await readFile(join(pluginRoot, "..", "marketplace.json"), "utf8"),
