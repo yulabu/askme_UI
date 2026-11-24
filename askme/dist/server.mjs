@@ -17049,6 +17049,8 @@ var TOOL_NAME = "askme_form";
 var MAX_QUESTIONS = 8;
 var MAX_OPTIONS = 12;
 var TYPES = /* @__PURE__ */ new Set(["single", "multi", "text", "textarea"]);
+var RESERVED_QUESTION_IDS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
+var OTHER_VALUE = "__other__";
 var distDir = dirname(fileURLToPath(import.meta.url));
 var pluginRoot = dirname(distDir);
 var cardPath = join(distDir, "ui", "card.html");
@@ -17079,8 +17081,7 @@ var inputSchema = {
                 description: { type: "string", maxLength: 300 },
                 recommended: { type: "boolean" }
               },
-              required: ["label"],
-              additionalProperties: false
+              required: ["label"]
             }
           },
           allowOther: { type: "boolean" },
@@ -17089,13 +17090,11 @@ var inputSchema = {
           placeholder: { type: "string", maxLength: 300 },
           maxLength: { type: "integer", minimum: 1, maximum: 2e4 }
         },
-        required: ["id", "title", "type"],
-        additionalProperties: false
+        required: ["id", "title", "type"]
       }
     }
   },
-  required: ["title", "questions"],
-  additionalProperties: false
+  required: ["title", "questions"]
 };
 var tool = {
   name: TOOL_NAME,
@@ -17127,7 +17126,7 @@ function validateForm(input) {
   const errors = [];
   const notes = [];
   if (!isPlainObject3(input)) {
-    return { ok: false, errors: ["Input must be an object."], notes, value: null };
+    return { ok: false, errors: ["Input must be an object."], notes, normalized: null };
   }
   const title = asString(input.title)?.trim();
   if (!title || title.length > 200) {
@@ -17155,8 +17154,8 @@ function validateForm(input) {
         return;
       }
       const id = asString(raw.id)?.trim();
-      if (!id || !/^[A-Za-z0-9_-]{1,32}$/.test(id)) {
-        errors.push(`${where}.id must match [A-Za-z0-9_-]{1,32}.`);
+      if (!id || !/^[A-Za-z0-9_-]{1,32}$/.test(id) || RESERVED_QUESTION_IDS.has(id)) {
+        errors.push(`${where}.id is invalid or reserved.`);
       } else if (seenIds.has(id)) {
         errors.push(`Duplicate question id "${id}".`);
       } else {
@@ -17202,6 +17201,10 @@ function validateForm(input) {
           const label = asString(rawOption.label)?.trim();
           if (!label || label.length > 120) {
             errors.push(`${optionWhere}.label must be a non-empty string of at most 120 characters.`);
+          } else if (label === OTHER_VALUE) {
+            errors.push(
+              `${optionWhere}.label "${OTHER_VALUE}" is reserved; use the built-in Other option.`
+            );
           } else if (labels.has(label)) {
             errors.push(`${optionWhere}.label is duplicated inside the question: "${label}".`);
           } else {
@@ -17269,13 +17272,13 @@ function validateForm(input) {
     });
   }
   if (errors.length > 0) {
-    return { ok: false, errors, notes, value: null };
+    return { ok: false, errors, notes, normalized: null };
   }
   return {
     ok: true,
     errors,
     notes,
-    value: {
+    normalized: {
       title,
       ...description ? { description } : {},
       questions: normalizedQuestions
@@ -17287,7 +17290,7 @@ async function readManifestVersion() {
     const manifest = JSON.parse(
       await readFile(join(pluginRoot, ".zcode-plugin", "plugin.json"), "utf8")
     );
-    return typeof manifest.version === "string" ? manifest.version : "0.1.0";
+    return typeof manifest.version === "string" ? manifest.version : "0.0.0";
   } catch {
     return "0.1.0";
   }
@@ -17335,10 +17338,14 @@ async function main() {
             text: `Invalid askme_form input:
 - ${result.errors.join("\n- ")}`
           }
-        ]
+        ],
+        structuredContent: {
+          errors: result.errors,
+          notes: result.notes
+        }
       };
     }
-    const count = result.value.questions.length;
+    const count = result.normalized.questions.length;
     let text = `Form displayed with ${count} question${count === 1 ? "" : "s"}. End your turn now and wait for the user's submission. If the user reports that the form is not visible, re-ask the same questions in plain text.`;
     if (result.notes.length > 0) {
       text += `

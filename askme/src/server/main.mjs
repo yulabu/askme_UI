@@ -18,6 +18,8 @@ const TOOL_NAME = "askme_form";
 const MAX_QUESTIONS = 8;
 const MAX_OPTIONS = 12;
 const TYPES = new Set(["single", "multi", "text", "textarea"]);
+const RESERVED_QUESTION_IDS = new Set(["__proto__", "constructor", "prototype"]);
+const OTHER_VALUE = "__other__";
 
 const distDir = dirname(fileURLToPath(import.meta.url));
 const pluginRoot = dirname(distDir);
@@ -51,7 +53,6 @@ const inputSchema = {
                 recommended: { type: "boolean" },
               },
               required: ["label"],
-              additionalProperties: false,
             },
           },
           allowOther: { type: "boolean" },
@@ -61,12 +62,10 @@ const inputSchema = {
           maxLength: { type: "integer", minimum: 1, maximum: 20000 },
         },
         required: ["id", "title", "type"],
-        additionalProperties: false,
       },
     },
   },
   required: ["title", "questions"],
-  additionalProperties: false,
 };
 
 const tool = {
@@ -106,7 +105,7 @@ function validateForm(input) {
   const notes = [];
 
   if (!isPlainObject(input)) {
-    return { ok: false, errors: ["Input must be an object."], notes, value: null };
+    return { ok: false, errors: ["Input must be an object."], notes, normalized: null };
   }
 
   const title = asString(input.title)?.trim();
@@ -140,8 +139,8 @@ function validateForm(input) {
       }
 
       const id = asString(raw.id)?.trim();
-      if (!id || !/^[A-Za-z0-9_-]{1,32}$/.test(id)) {
-        errors.push(`${where}.id must match [A-Za-z0-9_-]{1,32}.`);
+      if (!id || !/^[A-Za-z0-9_-]{1,32}$/.test(id) || RESERVED_QUESTION_IDS.has(id)) {
+        errors.push(`${where}.id is invalid or reserved.`);
       } else if (seenIds.has(id)) {
         errors.push(`Duplicate question id "${id}".`);
       } else {
@@ -195,6 +194,10 @@ function validateForm(input) {
           const label = asString(rawOption.label)?.trim();
           if (!label || label.length > 120) {
             errors.push(`${optionWhere}.label must be a non-empty string of at most 120 characters.`);
+          } else if (label === OTHER_VALUE) {
+            errors.push(
+              `${optionWhere}.label "${OTHER_VALUE}" is reserved; use the built-in Other option.`,
+            );
           } else if (labels.has(label)) {
             errors.push(`${optionWhere}.label is duplicated inside the question: "${label}".`);
           } else {
@@ -273,14 +276,14 @@ function validateForm(input) {
   }
 
   if (errors.length > 0) {
-    return { ok: false, errors, notes, value: null };
+    return { ok: false, errors, notes, normalized: null };
   }
 
   return {
     ok: true,
     errors,
     notes,
-    value: {
+    normalized: {
       title,
       ...(description ? { description } : {}),
       questions: normalizedQuestions,
@@ -293,7 +296,7 @@ async function readManifestVersion() {
     const manifest = JSON.parse(
       await readFile(join(pluginRoot, ".zcode-plugin", "plugin.json"), "utf8"),
     );
-    return typeof manifest.version === "string" ? manifest.version : "0.1.0";
+    return typeof manifest.version === "string" ? manifest.version : "0.0.0";
   } catch {
     return "0.1.0";
   }
@@ -347,10 +350,14 @@ async function main() {
             text: `Invalid askme_form input:\n- ${result.errors.join("\n- ")}`,
           },
         ],
+        structuredContent: {
+          errors: result.errors,
+          notes: result.notes,
+        },
       };
     }
 
-    const count = result.value.questions.length;
+    const count = result.normalized.questions.length;
     let text =
       `Form displayed with ${count} question${count === 1 ? "" : "s"}. ` +
       "End your turn now and wait for the user's submission. " +

@@ -43,7 +43,7 @@ askme_UI/
 
 3. 在 **个人 → dev-askme-ui** 找到 **问我 / Ask Me**，点击安装。
 4. **新建一个任务**再使用。插件安装、启用、禁用都只对新会话生效，当前会话不会加载新工具。
-5. 确认 `~/.zcode/AGENTS.md` 已写入「优先使用 askme_form」的偏好（本仓库已经写入；如果文件被重置，需要补回）。
+5. 确认 `~/.zcode/AGENTS.md` 已写入「优先使用 askme_form」的偏好（本机已经写入；如果文件被重置，需要补回）。
 
 ## 使用
 
@@ -85,8 +85,8 @@ askme_UI/
 cd askme
 npm install
 npm run build          # 生成 dist/server.mjs 和 dist/ui/card.html
-npm test               # MCP 协议测试（10 项）
-npm run test:ui        # 卡片 UI 测试（10 项，Playwright）
+npm test               # MCP 协议测试（12 项）
+npm run test:ui        # 卡片 UI 测试（21 项，Playwright）
 ```
 
 - UI 测试优先使用 Playwright 自带的 Chromium；没装时自动回退到系统 Microsoft Edge / Chrome。若要安装 Chromium：`npx playwright install chromium`。

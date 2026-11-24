@@ -105,6 +105,8 @@ test("resources/read returns self-contained HTML as text", async () => {
   assert.match(content.text, /window\.zcode/);
   assert.match(content.text, /sendFollowUpMessage/);
   assert.doesNotMatch(content.text, /https?:\/\//, "card must not reference external resources");
+  assert.doesNotMatch(content.text, /\beval\s*\(/, "card must not call eval");
+  assert.doesNotMatch(content.text, /\bnew Function\b/, "card must not build functions from strings");
 });
 
 test("tools/call accepts a valid form and tells the model to end its turn", async () => {
@@ -144,6 +146,41 @@ test("tools/call rejects duplicate question ids", async () => {
   });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /duplicate/i);
+  assert.ok(Array.isArray(result.structuredContent?.errors));
+  assert.ok(result.structuredContent.errors.some((error) => /duplicate/i.test(error)));
+});
+
+test("tools/call rejects reserved question ids", async () => {
+  for (const id of ["__proto__", "constructor", "prototype"]) {
+    const result = await client.callTool({
+      name: "askme_form",
+      arguments: {
+        title: "Reserved id",
+        questions: [{ id, title: "Question", type: "text" }],
+      },
+    });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /reserved/i);
+  }
+});
+
+test("tools/call rejects the reserved __other__ option label", async () => {
+  const result = await client.callTool({
+    name: "askme_form",
+    arguments: {
+      title: "Reserved label",
+      questions: [
+        {
+          id: "q1",
+          title: "Pick one",
+          type: "single",
+          options: [{ label: "__other__" }, { label: "B" }],
+        },
+      ],
+    },
+  });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /__other__/);
 });
 
 test("tools/call rejects a choice question without options", async () => {

@@ -134,9 +134,9 @@ type Question = {
   options?: Option[]               // single/multi 必填，2..12 项
   allowOther?: boolean             // 选择型默认 true
   required?: boolean               // 默认 false
-  suggestion?: string              // 仅 text/textarea，占位提示
-  placeholder?: string
-  maxLength?: number               // 默认 text 500，textarea 4000
+  suggestion?: string              // 仅 text/textarea，占位提示，<= 500
+  placeholder?: string             // <= 300
+  maxLength?: number               // 1..20000；默认 text 500，textarea 4000
 }
 
 type Option = {
@@ -152,13 +152,14 @@ type Option = {
 - `single` 最多一个 `recommended`；多个时服务端归一到第一个，并在结果中提示。
 - `multi` 允许任意数量 `recommended`。
 - 选择型没有有效选项、选项 label 重复、id 重复、类型非法时返回可读错误，不渲染卡片。
+- 保留 id（`__proto__`、`constructor`、`prototype`）和保留选项 label（`__other__`）直接拒绝，避免对象键污染和哨兵值冲突。
 - 未知字段忽略；缺失可选字段按默认值处理。
 
 ### Card Behavior
 
 - 控件：原生 radio/checkbox/input/textarea，使用 `fieldset` + `legend`，保留键盘操作与可见焦点。
 - 「其他」在单选和多选中都是追加选项；选中后显示文本框；文本为空时记为「其他（未填写）」。
-- 「采纳全部推荐」只作用于选择型：单选选中推荐项，多选勾选全部推荐项；文本型只保留 placeholder，不填值。
+- 「采纳全部推荐」只作用于选择型：单选选中推荐项，多选在保留已选项的基础上勾选全部推荐项；文本型只保留 placeholder，不填值。
 - 必答只做提示：提交前显示「还有 N 道必答题未回答」，但允许继续提交；答案消息中标记「（未回答）」。
 - 卡片状态机：`idle → submitting → submitted`，失败回到 `idle` 并显示错误；`submitted` 只读、不可再次提交。
 - 提交成功后原地折叠为「已提交 · 展开查看」；展开只读展示已提交内容。
@@ -175,7 +176,7 @@ type Option = {
 2. <题目标题> → A、C
 3. <题目标题> → （未回答）
 4. <题目标题> →
-   多行文本的后续行缩进两个空格。
+   多行文本的后续行缩进三个空格。
 ```
 
 - 多选使用中文顿号分隔。
@@ -186,7 +187,7 @@ type Option = {
 ### State & Limits
 
 - 草稿写入 `setWidgetState` 的 `privateContent`，`modelContent` 保持 `null`；整体序列化不超过 16 KiB。
-- 持久化内容：form id、各题答案、提交状态、已格式化的提交文本。
+- 持久化内容：form id、各题答案、提交状态、已格式化的提交文本、折叠状态。
 - 超过 16 KiB 时放弃持久化而不是报错；不存图片、密钥或大段无关内容。
 - 卡片高度用 `ResizeObserver` + `notifyIntrinsicHeight` 上报；不使用 `position: fixed`、`100vh` 或内部滚动容器。
 
@@ -255,19 +256,22 @@ type Option = {
 - `resources/list` 包含卡片资源，MIME 为 `text/html;profile=mcp-app`。
 - `resources/read` 返回 HTML 文本（非 blob），大小在限制内，内容包含卡片脚本。
 - `tools/call` 合法 schema 返回成功结果与内联渲染元数据。
-- `tools/call` 非法 schema（>8 题、重复 id、选择型缺选项、非法类型）返回可读错误，且不返回卡片资源。
+- 工具带 `readOnlyHint: true` 注解（不修改工作区），不影响交互语义。
+- `tools/call` 非法 schema（>8 题、重复 id、保留 id、保留 label、选择型缺选项、非法类型）返回可读错误和结构化错误数据，且不渲染卡片。
 - 未知方法/工具返回标准 JSON-RPC 错误。
+- 卡片资源不包含外部 URL、`eval` 或 `new Function`。
 
 ### UI Tests
 
-- 从 `toolInput` 渲染标题、说明、题目顺序与四种控件。
-- 单选/多选 + 「其他」输入：选中、输入、取消的取值正确。
-- 推荐徽标显示；「采纳全部推荐」正确选中单选/多选项，且不改写文本输入。
-- 必答未答时显示提示但允许提交；答案消息标记「（未回答）」。
+- 从 `toolInput` 渲染标题、说明、题目顺序与四种控件（含独立的短文本用例）。
+- 单选/多选 + 「其他」输入：选中、输入、取消的取值正确；多选「其他」可勾选后再取消。
+- 推荐徽标显示；「采纳全部推荐」正确选中单选/多选项、保留已有多选、且不改写文本输入。
+- 必答未答时显示提示但允许提交；空「其他」视为未答；答案消息标记「（未回答）」或「其他（未填写）」。
 - 提交调用 `sendFollowUpMessage`，参数与约定格式逐字符匹配。
 - 提交中按钮禁用；成功后只读折叠；失败后保持可编辑并显示错误。
-- 草稿写入 `widgetState` 并在重新挂载后恢复；提交状态持久化。
-- 浅色/深色下 `data-theme` 与变量应用正确。
+- 草稿写入 `widgetState` 并在重新挂载后恢复；超过 16 KiB 时不写入；提交状态和已发送消息持久化。
+- 宿主注入的 `data-theme` 与 `hostContext.styles.variables` 正确应用。
+- 单选键盘切换后焦点保留在对应输入上。
 - 卡片不发起网络请求，不调用 `eval`。
 
 ### Manual Acceptance
@@ -290,7 +294,7 @@ type Option = {
 - 公开市场发布、多人分发、权限/多租户。
 - 替换宿主强制的权限确认、plan 审批、计划模式提问。
 - 重做聊天界面或消息渲染。
-- 多语言 UI（v1 中文文案；文案集中管理，便于后续扩展）。
+- 多语言 UI（v1 中文文案；文案暂不集中管理，后续需要时再抽）。
 - 服务端保存答案、分析、审计。
 - 提交后就地编辑答案（用户可直接打字修正，或由 agent 重新发题）。
 - 单张表单超过 8 题（拆分为多轮）。
@@ -339,6 +343,6 @@ type Option = {
 - [x] 测试 seam 与用户确认
 - [x] grilling 一行委托获批
 - [ ] 本地 marketplace 与安装步骤实测
-- [x] server 协议测试（10/10）
-- [x] 卡片 UI 测试（10/10）
+- [x] server 协议测试（12/12）
+- [x] 卡片 UI 测试（21/21）
 - [x] ZCode Helper 启动验证

@@ -312,6 +312,30 @@
         white-space: pre-wrap;
       }
 
+      .sent-details {
+        margin-top: 12px;
+        border-top: 1px solid var(--askme-border);
+        padding-top: 10px;
+      }
+
+      .sent-summary {
+        color: var(--askme-fg-muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .sent-message {
+        margin: 8px 0 0;
+        padding: 10px;
+        border-radius: 8px;
+        background: var(--askme-bg-subtle);
+        color: var(--askme-fg);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
       .submitted-row {
         display: flex;
         align-items: center;
@@ -387,6 +411,7 @@
         const root = document.getElementById("root");
         const originalHost = window.zcode || null;
         const isPreview = originalHost === null;
+        const OTHER_VALUE = "__other__";
 
         const previewForm = {
           title: "预览：askme 表单",
@@ -494,6 +519,55 @@
             .trim();
         }
 
+        function errorMessage(error) {
+          return error && error.message ? error.message : String(error);
+        }
+
+        function unansweredHintText(count) {
+          return count > 0 ? "还有 " + count + " 道必答题未回答，仍可提交。" : "";
+        }
+
+        function inputName(question) {
+          return "askme-" + state.formId + "-" + question.id;
+        }
+
+        function optionInputId(question, index) {
+          return inputName(question) + "-opt-" + index;
+        }
+
+        function otherInputId(question) {
+          return inputName(question) + "-other";
+        }
+
+        function focusInput(name, value) {
+          const next = Array.from(root.querySelectorAll("input")).find(
+            (node) => node.name === name && node.value === value,
+          );
+          if (next) next.focus();
+        }
+
+        function normalizeForm(form) {
+          if (!form || !Array.isArray(form.questions)) return form;
+          return {
+            ...form,
+            questions: form.questions.map((question) => {
+              if (question.type !== "single" || !Array.isArray(question.options)) {
+                return question;
+              }
+              let kept = false;
+              return {
+                ...question,
+                options: question.options.map((option) => {
+                  if (!option.recommended) return option;
+                  if (kept) return { ...option, recommended: false };
+                  kept = true;
+                  return option;
+                }),
+              };
+            }),
+          };
+        }
+
         function el(tag, props = {}, children = []) {
           const node = document.createElement(tag);
           for (const [key, value] of Object.entries(props)) {
@@ -502,16 +576,13 @@
               node.textContent = String(value);
             } else if (key === "class") {
               node.className = value;
-            } else if (key === "dataset") {
-              Object.assign(node.dataset, value);
             } else if (key === "value") {
               node.value = value;
             } else if (
               key === "checked" ||
               key === "disabled" ||
               key === "hidden" ||
-              key === "selected" ||
-              key === "required"
+              key === "open"
             ) {
               node[key] = Boolean(value);
             } else if (key.startsWith("on") && typeof value === "function") {
@@ -527,7 +598,7 @@
           return node;
         }
 
-        function getAnswer(question) {
+        function ensureAnswer(question) {
           let answer = state.answers[question.id];
           if (!answer || typeof answer !== "object") {
             answer =
@@ -548,14 +619,20 @@
         }
 
         function initAnswers() {
-          for (const question of state.form.questions) getAnswer(question);
+          for (const question of state.form.questions) ensureAnswer(question);
         }
 
         function isAnswered(question) {
-          const answer = getAnswer(question);
-          if (question.type === "single") return Boolean(answer.value);
+          const answer = ensureAnswer(question);
+          if (question.type === "single") {
+            if (answer.value === OTHER_VALUE) return Boolean(oneLine(answer.other));
+            return Boolean(answer.value);
+          }
           if (question.type === "multi") {
-            return answer.values.length > 0 || answer.otherChecked;
+            return (
+              answer.values.length > 0 ||
+              (answer.otherChecked && Boolean(oneLine(answer.other)))
+            );
           }
           return Boolean((answer.value || "").trim());
         }
@@ -569,7 +646,7 @@
         function formatTextAnswer(question, answer) {
           if (question.type === "single") {
             if (!answer.value) return "（未回答）";
-            if (answer.value === "__other__") {
+            if (answer.value === OTHER_VALUE) {
               const other = oneLine(answer.other);
               return other ? "其他：" + other : "其他（未填写）";
             }
@@ -608,9 +685,11 @@
 
         function applyTheme() {
           const context = host && host.hostContext;
+          const injected = document.documentElement.dataset.theme;
           const theme =
             (host && host.theme) ||
             (context && context.theme) ||
+            injected ||
             (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
               ? "dark"
               : "light");
@@ -650,8 +729,19 @@
 
         async function persistNow() {
           if (!host || typeof host.setWidgetState !== "function") return;
+          const payload = widgetStatePayload();
+          let bytes = 0;
           try {
-            await host.setWidgetState(widgetStatePayload());
+            bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
+          } catch {
+            return;
+          }
+          if (bytes > 16 * 1024) {
+            // Spec: drop oversized drafts instead of surfacing a quota error.
+            return;
+          }
+          try {
+            await host.setWidgetState(payload);
           } catch {
             // Draft persistence is best-effort; a quota error must not break the form.
           }
@@ -692,7 +782,7 @@
             renderFatal("表单数据无效，请让 agent 重新生成。");
             return;
           }
-          state.form = form;
+          state.form = normalizeForm(form);
           state.formId = hashString(JSON.stringify(form));
           state.answers = {};
           state.submitting = false;
@@ -773,7 +863,8 @@
         }
 
         function renderCard() {
-          const readOnly = state.submitted;
+          const finished = state.submitted;
+          const locked = finished || state.submitting;
           const card = el("div", { class: "card", "data-testid": "askme-card" });
           if (isPreview) card.append(renderPreviewBanner());
 
@@ -785,7 +876,7 @@
                   "data-testid": "askme-title",
                   text: state.form.title,
                 }),
-                state.submitted ? el("span", { class: "status-badge", text: "已提交" }) : null,
+                finished ? el("span", { class: "status-badge", text: "已提交" }) : null,
               ]),
               state.form.description
                 ? el("p", {
@@ -800,7 +891,7 @@
           const hasRecommendations = state.form.questions.some((question) =>
             (question.options || []).some((option) => option.recommended),
           );
-          if (!readOnly && hasRecommendations) {
+          if (!locked && hasRecommendations) {
             card.append(
               el("div", { class: "toolbar" }, [
                 el("button", {
@@ -816,7 +907,7 @@
 
           const body = el("div", { class: "form-body", "data-testid": "form-body" });
           for (const question of state.form.questions) {
-            body.append(renderQuestion(question, readOnly));
+            body.append(renderQuestion(question, locked));
           }
           card.append(body);
 
@@ -831,7 +922,20 @@
             );
           }
 
-          if (readOnly) {
+          if (finished && state.submittedMessage) {
+            card.append(
+              el("details", { class: "sent-details", open: true }, [
+                el("summary", { class: "sent-summary", text: "已发送的消息" }),
+                el("pre", {
+                  class: "sent-message",
+                  "data-testid": "sent-message",
+                  text: state.submittedMessage,
+                }),
+              ]),
+            );
+          }
+
+          if (finished) {
             card.append(
               el("div", { class: "footer" }, [
                 el("button", {
@@ -854,11 +958,9 @@
                 el("div", {
                   class: "hint",
                   "data-testid": "unanswered-hint",
+                  "aria-live": "polite",
                   hidden: unanswered === 0,
-                  text:
-                    unanswered > 0
-                      ? "还有 " + unanswered + " 道必答题未回答，仍可提交。"
-                      : "",
+                  text: unansweredHintText(unanswered),
                 }),
                 el("button", {
                   class: "submit",
@@ -875,7 +977,7 @@
           return card;
         }
 
-        function renderQuestion(question, readOnly) {
+        function renderQuestion(question, locked) {
           const wrapper = el("fieldset", {
             class: "question",
             "data-testid": "question",
@@ -897,38 +999,38 @@
             wrapper.append(el("p", { class: "detail", text: question.detail }));
           }
           if (question.type === "single" || question.type === "multi") {
-            wrapper.append(renderChoice(question, readOnly));
+            wrapper.append(renderChoice(question, locked));
           } else {
-            wrapper.append(renderText(question, readOnly));
+            wrapper.append(renderText(question, locked));
           }
           return wrapper;
         }
 
-        function renderChoice(question, readOnly) {
+        function renderChoice(question, locked) {
           const options = el("div", { class: "options" });
           (question.options || []).forEach((option, index) => {
-            options.append(renderOption(question, option, index, readOnly));
+            options.append(renderOption(question, option, index, locked));
           });
           if (question.allowOther !== false) {
-            options.append(renderOther(question, (question.options || []).length, readOnly));
+            options.append(renderOther(question, (question.options || []).length, locked));
           }
           return options;
         }
 
-        function renderOption(question, option, index, readOnly) {
-          const answer = getAnswer(question);
+        function renderOption(question, option, index, locked) {
+          const answer = ensureAnswer(question);
           const isSingle = question.type === "single";
           const checked = isSingle
             ? answer.value === option.label
             : answer.values.includes(option.label);
-          const inputId = "askme-" + state.formId + "-" + question.id + "-opt-" + index;
+          const inputId = optionInputId(question, index);
           const input = el("input", {
             type: isSingle ? "radio" : "checkbox",
             id: inputId,
-            name: "askme-" + state.formId + "-" + question.id,
+            name: inputName(question),
             value: option.label,
             checked,
-            disabled: readOnly,
+            disabled: locked,
           });
           input.addEventListener("change", () => {
             if (isSingle) {
@@ -939,9 +1041,12 @@
               else values.delete(option.label);
               answer.values = Array.from(values);
             }
+            const name = input.name;
+            const value = input.value;
             state.error = "";
             saveState();
             render();
+            focusInput(name, value);
           });
 
           return el(
@@ -972,28 +1077,39 @@
           );
         }
 
-        function renderOther(question, index, readOnly) {
-          const answer = getAnswer(question);
+        function renderOther(question, index, locked) {
+          const answer = ensureAnswer(question);
           const isSingle = question.type === "single";
-          const checked = isSingle ? answer.value === "__other__" : answer.otherChecked;
-          const inputId = "askme-" + state.formId + "-" + question.id + "-other";
+          const checked = isSingle ? answer.value === OTHER_VALUE : answer.otherChecked;
+          const inputId = otherInputId(question);
           const input = el("input", {
             type: isSingle ? "radio" : "checkbox",
             id: inputId,
-            name: "askme-" + state.formId + "-" + question.id,
-            value: "__other__",
+            name: inputName(question),
+            value: OTHER_VALUE,
             checked,
-            disabled: readOnly,
+            disabled: locked,
           });
           input.addEventListener("change", () => {
             if (isSingle) {
-              answer.value = input.checked ? "__other__" : "";
+              answer.value = input.checked ? OTHER_VALUE : "";
             } else {
               answer.otherChecked = input.checked;
             }
+            const name = input.name;
+            const value = input.value;
+            const active = input.checked;
             state.error = "";
             saveState();
             render();
+            if (active) {
+              const field = root.querySelector(
+                '[data-testid="other-input-' + question.id + '"]',
+              );
+              if (field) field.focus();
+            } else {
+              focusInput(name, value);
+            }
           });
 
           const otherInput = el("input", {
@@ -1002,7 +1118,7 @@
             "data-testid": "other-input-" + question.id,
             placeholder: "请输入…",
             value: answer.other || "",
-            disabled: readOnly || !checked,
+            disabled: locked || !checked,
           });
           otherInput.addEventListener("input", () => {
             answer.other = otherInput.value;
@@ -1029,8 +1145,8 @@
           return el("div", { class: "option-wrap" }, [label, otherInput]);
         }
 
-        function renderText(question, readOnly) {
-          const answer = getAnswer(question);
+        function renderText(question, locked) {
+          const answer = ensureAnswer(question);
           const isTextarea = question.type === "textarea";
           const input = el(isTextarea ? "textarea" : "input", {
             class: isTextarea ? "textarea-input" : "text-input",
@@ -1040,7 +1156,7 @@
             maxlength: question.maxLength ?? (isTextarea ? 4000 : 500),
             placeholder: question.placeholder || question.suggestion || "",
             value: answer.value || "",
-            disabled: readOnly,
+            disabled: locked,
           });
           input.addEventListener("input", () => {
             answer.value = input.value;
@@ -1055,26 +1171,32 @@
           const hint = root.querySelector('[data-testid="unanswered-hint"]');
           if (!hint) return;
           const count = countUnansweredRequired();
-          hint.textContent =
-            count > 0 ? "还有 " + count + " 道必答题未回答，仍可提交。" : "";
+          hint.textContent = unansweredHintText(count);
           hint.hidden = count === 0;
         }
 
         function acceptAll() {
           for (const question of state.form.questions) {
-            const answer = getAnswer(question);
+            const answer = ensureAnswer(question);
             const recommended = (question.options || []).filter(
               (option) => option.recommended,
             );
             if (question.type === "single" && recommended.length > 0) {
               answer.value = recommended[0].label;
             } else if (question.type === "multi" && recommended.length > 0) {
-              answer.values = recommended.map((option) => option.label);
+              answer.values = Array.from(
+                new Set([
+                  ...answer.values,
+                  ...recommended.map((option) => option.label),
+                ]),
+              );
             }
           }
           state.error = "";
           saveState();
           render();
+          const button = root.querySelector('[data-testid="accept-all"]');
+          if (button) button.focus();
         }
 
         async function handleSubmit() {
@@ -1092,7 +1214,7 @@
             state.submittedMessage = message;
             state.collapsed = true;
           } catch (error) {
-            state.error = error && error.message ? error.message : String(error);
+            state.error = errorMessage(error);
           } finally {
             state.submitting = false;
             await persistNow();
@@ -1106,9 +1228,7 @@
               await host.ready;
             }
           } catch (error) {
-            renderFatal(
-              "无法连接 ZCode：" + (error && error.message ? error.message : String(error)),
-            );
+            renderFatal("无法连接 ZCode：" + errorMessage(error));
             return;
           }
 
