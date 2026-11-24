@@ -1,6 +1,6 @@
 # askme — 内联交互表单提问插件
 
-状态：Implemented v0.2.1（form + wait 两段式，实机待验）
+状态：Implemented v0.2.2（form + wait 两段式，实机待验）
 版本：0.1
 日期：2026-11-24
 
@@ -291,6 +291,7 @@ type Option = {
 - 提交中按钮禁用；成功后只读折叠；失败后保持可编辑并显示错误。
 - 草稿写入 `widgetState` 并在重新挂载后恢复；超过 16 KiB 时不写入；提交状态和已发送消息持久化。
 - 宿主注入的 `data-theme` 与 `hostContext.styles.variables` 正确应用。
+- 打字过程中 `setWidgetState` 触发的宿主通知不会整卡重渲染，输入框保留焦点和内容。
 - 单选键盘切换后焦点保留在对应输入上。
 - 卡片不发起网络请求，不调用 `eval`。
 
@@ -371,5 +372,5 @@ type Option = {
 - [x] 实机内联渲染（0.1.0 截图验证）
 - [ ] 实机提交与 `/grill-me` 验收
 - [x] server 协议测试（17/17）
-- [x] 卡片 UI 测试（24/24）
+- [x] 卡片 UI 测试（25/25）
 - [x] ZCode Helper 启动验证

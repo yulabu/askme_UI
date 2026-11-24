@@ -88,7 +88,7 @@ cd /Users/yulabu/Code/askme_UI   # 仓库根
 npm install
 npm run build                    # 生成 askme/dist/server.mjs 和 askme/dist/ui/card.html
 npm test                         # MCP 协议测试（17 项）
-npm run test:ui                  # 卡片 UI 测试（24 项，Playwright）
+npm run test:ui                  # 卡片 UI 测试（25 项，Playwright）
 ```
 
 - 开发依赖在仓库根，`askme/` 目录本身不含 `node_modules`；安装时只复制约 800KB 的插件源码与构建产物。

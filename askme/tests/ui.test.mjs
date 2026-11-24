@@ -133,6 +133,7 @@ async function openCard(options = {}) {
         },
         setWidgetState: async (next) => {
           window.__mock.state = next;
+          for (const subscriber of window.__mock.subscribers) subscriber();
         },
         callTool: async (name, args) => {
           if (window.__mock.reject) throw new Error(window.__mock.rejectMessage);
@@ -351,6 +352,22 @@ test("keeps the form editable and shows the error when submission fails", async 
     assert.equal(await page.locator('[data-testid="form-body"]').isVisible(), true);
     assert.equal(await page.locator('[data-testid="submit"]').isEnabled(), true);
     assert.equal(await page.locator('[data-testid="option-q1-0"] input').isChecked(), true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("typing survives widget-state notifications", async () => {
+  const { context, page } = await openCard();
+  try {
+    const textarea = page.locator('[data-testid="text-q3"]');
+    await textarea.click();
+    await textarea.pressSequentially("ab", { delay: 300 });
+    assert.equal(await textarea.inputValue(), "ab");
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute("data-testid")),
+      "text-q3",
+    );
   } finally {
     await context.close();
   }

@@ -469,6 +469,9 @@
           toolCancelled: false,
         };
 
+        let lastTheme = null;
+        let lastHeight = -1;
+
         let host = originalHost;
 
         if (!host) {
@@ -714,6 +717,7 @@
               : "light");
           document.documentElement.dataset.theme = theme;
           document.documentElement.style.colorScheme = theme;
+          lastTheme = theme;
           const variables = context && context.styles && context.styles.variables;
           if (variables && typeof variables === "object") {
             for (const [key, value] of Object.entries(variables)) {
@@ -729,7 +733,10 @@
           window.clearTimeout(heightTimer);
           heightTimer = window.setTimeout(() => {
             if (!host || typeof host.notifyIntrinsicHeight !== "function") return;
-            host.notifyIntrinsicHeight(Math.ceil(document.body.scrollHeight));
+            const height = Math.ceil(document.body.scrollHeight);
+            if (height === lastHeight) return;
+            lastHeight = height;
+            host.notifyIntrinsicHeight(height);
           }, 60);
         }
 
@@ -1190,8 +1197,10 @@
           const hint = root.querySelector('[data-testid="unanswered-hint"]');
           if (!hint) return;
           const count = countUnansweredRequired();
-          hint.textContent = unansweredHintText(count);
-          hint.hidden = count === 0;
+          const text = unansweredHintText(count);
+          const hidden = count === 0;
+          if (hint.textContent !== text) hint.textContent = text;
+          if (hint.hidden !== hidden) hint.hidden = hidden;
         }
 
         function acceptAll() {
@@ -1261,7 +1270,11 @@
           if (!host) return;
           const next = readForm();
           if (!next) {
-            state.toolCancelled = Boolean(host.toolCancelled);
+            const cancelled = Boolean(host.toolCancelled);
+            if (cancelled !== state.toolCancelled) {
+              state.toolCancelled = cancelled;
+              render();
+            }
             applyTheme();
             return;
           }
@@ -1269,11 +1282,28 @@
           const nextId = hashString(formSignature(next));
           if (nextId !== state.formId) {
             init(next);
-          } else {
-            state.toolCancelled = Boolean(host.toolCancelled);
-            applyTheme();
-            render();
+            return;
           }
+
+          // Only re-render when something the card displays actually changed.
+          // Widget-state saves also notify subscribers; re-rendering on those
+          // would replace the focused input while the user is typing.
+          let needsRender = false;
+          const cancelled = Boolean(host.toolCancelled);
+          if (cancelled !== state.toolCancelled) {
+            state.toolCancelled = cancelled;
+            needsRender = true;
+          }
+          const context = host.hostContext;
+          const theme =
+            (host.theme) ||
+            (context && context.theme) ||
+            document.documentElement.dataset.theme ||
+            null;
+          if (theme && theme !== lastTheme) {
+            applyTheme();
+          }
+          if (needsRender) render();
         }
 
         async function boot() {
