@@ -1,6 +1,6 @@
 {
   "name": "askme",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Interactive inline question forms for ZCode",
   "author": {
     "name": "yulabu"
@@ -18,7 +18,8 @@
       "env": {
         "ELECTRON_RUN_AS_NODE": "1",
         "ZCODE_PLUGIN_ID": "askme@dev-askme-ui"
-      }
+      },
+      "timeoutMs": 600000
     }
   }
 }

@@ -496,8 +496,11 @@
             setWidgetState: async (next) => {
               widgetState = next;
             },
-            sendFollowUpMessage: async ({ prompt }) => {
-              console.log("[askme preview] follow-up message:\n" + prompt);
+            callTool: async (name, args) => {
+              console.log(
+                "[askme preview] " + name + ":\n" + ((args && args.message) || ""),
+              );
+              return { content: [{ type: "text", text: "Answers received." }] };
             },
             notifyIntrinsicHeight: () => {},
             subscribe: () => () => {},
@@ -1222,10 +1225,14 @@
           render();
           const message = formatAnswer(state.form, state.answers);
           try {
-            if (!host || typeof host.sendFollowUpMessage !== "function") {
+            if (!host || typeof host.callTool !== "function") {
               throw new Error("当前环境不支持提交。");
             }
-            await host.sendFollowUpMessage({ prompt: message });
+            await host.callTool("askme_submit", {
+              formId: state.formId,
+              message,
+              answers: state.answers,
+            });
             state.submitted = true;
             state.submittedMessage = message;
             state.collapsed = true;

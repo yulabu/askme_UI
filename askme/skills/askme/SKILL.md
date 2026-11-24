@@ -6,7 +6,7 @@ when_to_use: Before a decision that depends on the user's preference, during a g
 
 # askme
 
-Use the `askme_form` MCP tool to render a form inline in the conversation. The user's submission arrives as a new user message starting with `表单回答 ·` and starts the next turn.
+Use the `askme_form` MCP tool to render a form inline in the conversation. The tool **stays open** until the user submits, then returns the formatted answers as its tool result. Continue from that result in the same turn.
 
 ## Prefer this over AskUserQuestion
 
@@ -16,7 +16,8 @@ When `askme_form` is available, use it for every clarification round instead of 
 
 - One form per round; 1-8 questions. Split larger rounds into multiple forms.
 - Put your prose and analysis in a normal message before the tool call. The form carries only the title, description, and questions.
-- Call `askme_form` as the **last action** of your turn, then end your turn. Do not answer your own questions or guess the user's answers.
+- Call `askme_form` as the **last action** of the round and wait for its result. Do not call other tools while it is open. Do not answer your own questions or guess the user's answers.
+- Never call the app-only `askme_submit` tool; the form card calls it.
 - Types:
   - `single`: one choice; 2-12 options.
   - `multi`: several choices; 2-12 options.
@@ -72,14 +73,16 @@ When `askme_form` is available, use it for every clarification round instead of 
 
 ## After submission
 
-- The user message starts with `表单回答 · <form title>`.
+- The tool result is the formatted answer message and starts with `表单回答 · <form title>`.
 - Each question is one line: `1. <question title> → <answer>`.
 - Multi-choice answers are separated by `、`; an "Other" answer is written as `其他：<text>`.
 - Long answers may continue on indented lines.
 - `（未回答）` means the user skipped that question. Do not invent an answer.
+- Use the answers and continue the same turn. Do not expect a separate user message.
 
 ## Failure handling
 
 - If `askme_form` returns `isError: true`, fix the schema and retry. Do not invent a form.
 - If the user reports that the form did not render, re-ask the same questions in plain text.
-- If submission fails because the session is busy, read-only, or the user cancelled the host confirmation, the card stays editable and shows the error; ask the user to retry.
+- If the form times out or is cancelled, the error says so; re-ask the questions or continue without them. Do not invent answers.
+- If the tool reports that another form is already open, wait for it to be submitted or cancelled; do not open a second form.

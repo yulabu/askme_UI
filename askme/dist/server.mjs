@@ -17051,6 +17051,10 @@ var MAX_OPTIONS = 12;
 var TYPES = /* @__PURE__ */ new Set(["single", "multi", "text", "textarea"]);
 var RESERVED_QUESTION_IDS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
 var OTHER_VALUE = "__other__";
+var SUBMIT_TOOL_NAME = "askme_submit";
+var FORM_WAIT_TIMEOUT_MS = 9.5 * 60 * 1e3;
+var PROGRESS_INTERVAL_MS = 15e3;
+var MAX_ANSWER_MESSAGE = 3e4;
 var distDir = dirname(fileURLToPath(import.meta.url));
 var pluginRoot = dirname(distDir);
 var cardPath = join(distDir, "ui", "card.html");
@@ -17099,7 +17103,7 @@ var inputSchema = {
 var tool = {
   name: TOOL_NAME,
   title: "Ask the user with an inline form",
-  description: `Render an interactive form inline in the conversation when you need the user to answer one or more questions. Prefer this over the built-in AskUserQuestion tool for clarification rounds: it supports 1-8 questions, single-choice, multi-choice, short text and long text in one submission, with recommended answers. Call this tool as the last action of your turn, then end your turn and wait. The user's submission will arrive as a new user message starting with "\u8868\u5355\u56DE\u7B54 \xB7" and start the next turn.`,
+  description: 'Render an interactive form inline in the conversation when you need the user to answer one or more questions. Prefer this over the built-in AskUserQuestion tool for clarification rounds: it supports 1-8 questions, single-choice, multi-choice, short text and long text in one submission, with recommended answers. Call this tool as the last action of the round and wait for its result. The tool stays open until the user submits; the result is the formatted answer message starting with "\u8868\u5355\u56DE\u7B54 \xB7". Continue from that result in the same turn. If the user reports that the form is not visible, re-ask the same questions in plain text.',
   inputSchema,
   annotations: {
     readOnlyHint: true,
@@ -17116,11 +17120,96 @@ var tool = {
     "anthropic/alwaysLoad": true
   }
 };
+var submitTool = {
+  name: SUBMIT_TOOL_NAME,
+  title: "Submit an Ask Me form",
+  description: "Internal app-only tool used by the Ask Me form card to submit the user's answers. The model must not call this tool.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      formId: { type: "string", minLength: 1, maxLength: 64 },
+      message: { type: "string", minLength: 1, maxLength: 6e4 },
+      answers: { type: "object" }
+    },
+    required: ["formId", "message"]
+  },
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false
+  },
+  _meta: {
+    ui: {
+      visibility: ["app"]
+    }
+  }
+};
 function isPlainObject3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function asString(value) {
   return typeof value === "string" ? value : void 0;
+}
+function oneLine(value) {
+  return String(value === void 0 || value === null ? "" : value).replace(/\s+/g, " ").trim();
+}
+function formSignature(form) {
+  return JSON.stringify({
+    title: oneLine(form && form.title),
+    questions: Array.isArray(form && form.questions) ? form.questions.map((question) => ({
+      id: question.id,
+      title: oneLine(question.title),
+      type: question.type,
+      options: Array.isArray(question.options) ? question.options.map((option) => oneLine(option.label)) : []
+    })) : []
+  });
+}
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+function computeFormId(form) {
+  return hashString(formSignature(form));
+}
+var pendingForm = null;
+function handleSubmit(input) {
+  if (!pendingForm) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "No Ask Me form is currently open." }]
+    };
+  }
+  const formId = asString(input && input.formId);
+  if (!formId || formId !== pendingForm.formId) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "This form is no longer open. Ask the agent to resend it."
+        }
+      ]
+    };
+  }
+  const message = asString(input && input.message)?.trim();
+  if (!message) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: "The submission is empty." }]
+    };
+  }
+  const capped = message.length > MAX_ANSWER_MESSAGE ? message.slice(0, MAX_ANSWER_MESSAGE) + "\n\u2026\uFF08\u5185\u5BB9\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\uFF09" : message;
+  pendingForm.submit({
+    message: capped,
+    answers: isPlainObject3(input && input.answers) ? input.answers : null
+  });
+  return {
+    content: [{ type: "text", text: "Answers received." }]
+  };
 }
 function validateForm(input) {
   const errors = [];
@@ -17292,7 +17381,7 @@ async function readManifestVersion() {
     );
     return typeof manifest.version === "string" ? manifest.version : "0.0.0";
   } catch {
-    return "0.1.0";
+    return "0.0.0";
   }
 }
 async function main() {
@@ -17301,7 +17390,9 @@ async function main() {
     { name: "askme", version: version2 },
     { capabilities: { tools: {}, resources: {} } }
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [tool] }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [tool, submitTool]
+  }));
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: [
       {
@@ -17321,7 +17412,10 @@ async function main() {
       contents: [{ uri: CARD_URI, mimeType: CARD_MIME, text: html }]
     };
   });
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    if (request.params.name === SUBMIT_TOOL_NAME) {
+      return handleSubmit(request.params.arguments);
+    }
     if (request.params.name !== TOOL_NAME) {
       throw new McpError(
         ErrorCode.MethodNotFound,
@@ -17345,20 +17439,93 @@ async function main() {
         }
       };
     }
-    const count = result.normalized.questions.length;
-    let text = `Form displayed with ${count} question${count === 1 ? "" : "s"}. End your turn now and wait for the user's submission. If the user reports that the form is not visible, re-ask the same questions in plain text.`;
-    if (result.notes.length > 0) {
-      text += `
+    if (pendingForm) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: "Another Ask Me form is already open. Wait for it to be submitted or cancelled before opening a new one."
+          }
+        ]
+      };
+    }
+    const formId = computeFormId(request.params.arguments);
+    const progressToken = extra && extra._meta ? extra._meta.progressToken : void 0;
+    let progress = 0;
+    const progressTimer = progressToken === void 0 || typeof extra?.sendNotification !== "function" ? null : setInterval(() => {
+      progress += 1;
+      extra.sendNotification({
+        method: "notifications/progress",
+        params: {
+          progressToken,
+          progress,
+          message: "Waiting for the user to submit the form."
+        }
+      }).catch(() => {
+      });
+    }, PROGRESS_INTERVAL_MS);
+    let settled = false;
+    let resolveWait;
+    let rejectWait;
+    const wait = new Promise((resolve2, reject) => {
+      resolveWait = resolve2;
+      rejectWait = reject;
+    });
+    let timeout;
+    const onAbort = () => finish(new Error("The form was cancelled."));
+    function finish(error2, submission) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (progressTimer) clearInterval(progressTimer);
+      if (extra && extra.signal) {
+        extra.signal.removeEventListener("abort", onAbort);
+      }
+      if (pendingForm && pendingForm.formId === formId) pendingForm = null;
+      if (error2) rejectWait(error2);
+      else resolveWait(submission);
+    }
+    pendingForm = {
+      formId,
+      submit: (submission) => finish(null, submission),
+      cancel: () => finish(new Error("The form was cancelled."))
+    };
+    timeout = setTimeout(
+      () => finish(new Error("The form timed out waiting for the user.")),
+      FORM_WAIT_TIMEOUT_MS
+    );
+    if (extra && extra.signal) {
+      if (extra.signal.aborted) onAbort();
+      else extra.signal.addEventListener("abort", onAbort, { once: true });
+    }
+    try {
+      const submission = await wait;
+      let text = submission.message;
+      if (result.notes.length > 0) {
+        text += `
 
 Notes:
 - ${result.notes.join("\n- ")}`;
+      }
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: {
+          formId,
+          answers: submission.answers ?? null
+        }
+      };
+    } catch (error2) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: error2 && error2.message ? error2.message : String(error2)
+          }
+        ]
+      };
     }
-    return {
-      content: [{ type: "text", text }],
-      // The card also reads the form from toolOutput.form, so it can render
-      // even if ui/notifications/tool-input arrives later or not at all.
-      structuredContent: { form: result.normalized }
-    };
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -17370,5 +17537,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   });
 }
 export {
+  computeFormId,
+  formSignature,
   main
 };
