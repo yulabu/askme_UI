@@ -1,0 +1,24 @@
+{
+  "name": "askme",
+  "version": "0.1.0",
+  "description": "Interactive inline question forms for ZCode",
+  "author": {
+    "name": "yulabu"
+  },
+  "skills": "./skills",
+  "mcpServers": {
+    "askme": {
+      "type": "stdio",
+      "command": "/Applications/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper",
+      "args": [
+        "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs",
+        "__zcode-plugin-host",
+        "${CLAUDE_PLUGIN_ROOT}/dist/server.mjs"
+      ],
+      "env": {
+        "ELECTRON_RUN_AS_NODE": "1",
+        "ZCODE_PLUGIN_ID": "askme@dev-askme-ui"
+      }
+    }
+  }
+}

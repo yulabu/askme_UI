@@ -1,0 +1,19 @@
+{
+  "name": "dev-askme-ui",
+  "plugins": [
+    {
+      "name": "askme",
+      "source": "./askme",
+      "version": "0.1.0",
+      "description": "Interactive inline question forms for ZCode",
+      "displayName": "Ask Me",
+      "displayName_i18n": {
+        "zh-CN": "问我"
+      },
+      "description_i18n": {
+        "zh-CN": "在对话消息流中渲染可交互表单，点选或填写后提交回主会话。"
+      },
+      "category": "productivity"
+    }
+  ]
+}

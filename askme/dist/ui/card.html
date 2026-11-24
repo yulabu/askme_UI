@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ask Me</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --askme-fg: var(--color-text-primary, #1f2328);
+        --askme-fg-muted: var(--color-text-secondary, #59636e);
+        --askme-bg: var(--color-background-primary, #ffffff);
+        --askme-bg-subtle: var(--color-background-secondary, #f6f8fa);
+        --askme-border: var(--color-border-default, #d1d9e0);
+        --askme-border-strong: var(--color-border-strong, #b7c0c8);
+        --askme-accent: var(--color-accent-primary, #0969da);
+        --askme-accent-fg: var(--color-text-on-accent, #ffffff);
+        --askme-accent-subtle: var(--color-accent-subtle, #ddf4ff);
+        --askme-danger: var(--color-text-danger, #d1242f);
+        --askme-danger-subtle: var(--color-background-danger, #ffebe9);
+        --askme-radius: 10px;
+        --askme-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      [data-theme="dark"] {
+        color-scheme: dark;
+        --askme-fg: var(--color-text-primary, #e6edf3);
+        --askme-fg-muted: var(--color-text-secondary, #9198a1);
+        --askme-bg: var(--color-background-primary, #0d1117);
+        --askme-bg-subtle: var(--color-background-secondary, #151b23);
+        --askme-border: var(--color-border-default, #3d444d);
+        --askme-border-strong: var(--color-border-strong, #4d5560);
+        --askme-accent: var(--color-accent-primary, #4493f8);
+        --askme-accent-fg: var(--color-text-on-accent, #0d1117);
+        --askme-accent-subtle: var(--color-accent-subtle, #121d2f);
+        --askme-danger: var(--color-text-danger, #ff7b72);
+        --askme-danger-subtle: var(--color-background-danger, #2d1214);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+
+      body {
+        font-family: var(--askme-font);
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--askme-fg);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      .card {
+        border: 1px solid var(--askme-border);
+        border-radius: 12px;
+        background: var(--askme-bg);
+        padding: 16px;
+        max-width: 100%;
+      }
+
+      .preview-banner {
+        margin-bottom: 12px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        background: var(--askme-accent-subtle);
+        color: var(--askme-accent);
+        font-size: 12px;
+      }
+
+      .header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1.35;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--askme-accent-subtle);
+        color: var(--askme-accent);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .description {
+        margin: 0;
+        color: var(--askme-fg-muted);
+        font-size: 13px;
+      }
+
+      .toolbar {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 8px;
+      }
+
+      .questions {
+        display: none;
+      }
+
+      .form-body {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        margin-top: 14px;
+      }
+
+      .question {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        min-width: 0;
+      }
+
+      .question-legend {
+        padding: 0;
+        margin: 0 0 4px;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+
+      .required-mark {
+        color: var(--askme-danger);
+        font-weight: 600;
+      }
+
+      .detail {
+        margin: 0 0 8px;
+        color: var(--askme-fg-muted);
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+
+      .options {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .option-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .option {
+        display: flex;
+        gap: 9px;
+        align-items: flex-start;
+        padding: 9px 10px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background-color 80ms ease, border-color 80ms ease;
+      }
+
+      .option:hover {
+        background: var(--askme-bg-subtle);
+      }
+
+      .option:has(input:checked) {
+        border-color: var(--askme-accent);
+        background: var(--askme-accent-subtle);
+      }
+
+      .option:has(input:disabled) {
+        cursor: default;
+      }
+
+      .option input[type="radio"],
+      .option input[type="checkbox"] {
+        margin: 2px 0 0;
+        accent-color: var(--askme-accent);
+        flex: none;
+      }
+
+      .option-body {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+      }
+
+      .option-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .option-text {
+        font-weight: 500;
+      }
+
+      .option-description {
+        color: var(--askme-fg-muted);
+        font-size: 12px;
+      }
+
+      .recommended {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 6px;
+        border: 1px solid var(--askme-accent);
+        border-radius: 999px;
+        color: var(--askme-accent);
+        font-size: 11px;
+        line-height: 17px;
+        font-weight: 500;
+        white-space: nowrap;
+      }
+
+      .other-input,
+      .text-input,
+      .textarea-input {
+        width: 100%;
+        border: 1px solid var(--askme-border);
+        border-radius: 8px;
+        background: var(--askme-bg);
+        color: var(--askme-fg);
+        font: inherit;
+        padding: 8px 10px;
+      }
+
+      .other-input {
+        margin-left: 28px;
+        width: calc(100% - 28px);
+      }
+
+      .other-input:disabled {
+        opacity: 0.55;
+      }
+
+      .textarea-input {
+        min-height: 92px;
+        resize: vertical;
+      }
+
+      .other-input:focus,
+      .text-input:focus,
+      .textarea-input:focus,
+      .option input:focus-visible,
+      .submit:focus-visible,
+      .link-button:focus-visible {
+        outline: 2px solid var(--askme-accent);
+        outline-offset: 2px;
+      }
+
+      .footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .hint {
+        color: var(--askme-fg-muted);
+        font-size: 12px;
+      }
+
+      .submit {
+        flex: none;
+        border: 0;
+        border-radius: 8px;
+        background: var(--askme-accent);
+        color: var(--askme-accent-fg);
+        font: inherit;
+        font-weight: 600;
+        padding: 9px 18px;
+        cursor: pointer;
+      }
+
+      .submit:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      .error {
+        margin-top: 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: var(--askme-danger-subtle);
+        color: var(--askme-danger);
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+
+      .submitted-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .check {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--askme-accent);
+        color: var(--askme-accent-fg);
+        font-size: 12px;
+        font-weight: 700;
+        flex: none;
+      }
+
+      .submitted-text {
+        font-weight: 500;
+      }
+
+      .link-button {
+        border: 0;
+        background: transparent;
+        color: var(--askme-accent);
+        font: inherit;
+        font-size: 13px;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .link-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      @media (max-width: 560px) {
+        .card {
+          padding: 12px;
+        }
+
+        .footer {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .submit {
+          width: 100%;
+        }
+
+        .other-input {
+          margin-left: 0;
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="card" data-testid="askme-card">
+        <p class="description">加载表单…</p>
+      </div>
+    </div>
+    <script>
+      (() => {
+        "use strict";
+
+        const root = document.getElementById("root");
+        const originalHost = window.zcode || null;
+        const isPreview = originalHost === null;
+
+        const previewForm = {
+          title: "预览：askme 表单",
+          description: "这是一个本地预览，提交只会输出到浏览器控制台。",
+          questions: [
+            {
+              id: "preview-single",
+              title: "单选示例",
+              detail: "这是单选的说明文字。",
+              type: "single",
+              options: [
+                { label: "选项 A", description: "被标记为推荐", recommended: true },
+                { label: "选项 B" },
+              ],
+              allowOther: true,
+              required: true,
+            },
+            {
+              id: "preview-multi",
+              title: "多选示例",
+              type: "multi",
+              options: [
+                { label: "单选", recommended: true },
+                { label: "多选", recommended: true },
+                { label: "长文本" },
+              ],
+              allowOther: true,
+            },
+            {
+              id: "preview-text",
+              title: "短文本示例",
+              type: "text",
+              suggestion: "例如：可以",
+              maxLength: 500,
+            },
+            {
+              id: "preview-textarea",
+              title: "长文本示例",
+              type: "textarea",
+              placeholder: "写点什么…",
+              maxLength: 4000,
+            },
+          ],
+        };
+
+        const state = {
+          form: null,
+          formId: "",
+          answers: {},
+          submitting: false,
+          submitted: false,
+          submittedMessage: "",
+          collapsed: false,
+          error: "",
+          toolCancelled: false,
+        };
+
+        let host = originalHost;
+
+        if (!host) {
+          host = makePreviewHost();
+        }
+
+        function makePreviewHost() {
+          let widgetState = null;
+          const theme = () =>
+            window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          return {
+            ready: Promise.resolve(),
+            toolInput: previewForm,
+            toolOutput: null,
+            toolCancelled: false,
+            get theme() {
+              return theme();
+            },
+            hostContext: { theme: theme(), styles: { variables: {} }, displayMode: "inline" },
+            get widgetState() {
+              return widgetState;
+            },
+            setWidgetState: async (next) => {
+              widgetState = next;
+            },
+            sendFollowUpMessage: async ({ prompt }) => {
+              console.log("[askme preview] follow-up message:\n" + prompt);
+            },
+            notifyIntrinsicHeight: () => {},
+            subscribe: () => () => {},
+          };
+        }
+
+        function hashString(value) {
+          let hash = 2166136261;
+          for (let index = 0; index < value.length; index += 1) {
+            hash ^= value.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+          }
+          return (hash >>> 0).toString(36);
+        }
+
+        function oneLine(value) {
+          return String(value === undefined || value === null ? "" : value)
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+
+        function el(tag, props = {}, children = []) {
+          const node = document.createElement(tag);
+          for (const [key, value] of Object.entries(props)) {
+            if (value === undefined || value === null || value === false) continue;
+            if (key === "text") {
+              node.textContent = String(value);
+            } else if (key === "class") {
+              node.className = value;
+            } else if (key === "dataset") {
+              Object.assign(node.dataset, value);
+            } else if (key === "value") {
+              node.value = value;
+            } else if (
+              key === "checked" ||
+              key === "disabled" ||
+              key === "hidden" ||
+              key === "selected" ||
+              key === "required"
+            ) {
+              node[key] = Boolean(value);
+            } else if (key.startsWith("on") && typeof value === "function") {
+              node.addEventListener(key.slice(2).toLowerCase(), value);
+            } else {
+              node.setAttribute(key, String(value));
+            }
+          }
+          for (const child of children) {
+            if (child === undefined || child === null || child === false) continue;
+            node.append(child);
+          }
+          return node;
+        }
+
+        function getAnswer(question) {
+          let answer = state.answers[question.id];
+          if (!answer || typeof answer !== "object") {
+            answer =
+              question.type === "multi"
+                ? { values: [], otherChecked: false, other: "" }
+                : { value: "", other: "" };
+            state.answers[question.id] = answer;
+          }
+          if (question.type === "multi") {
+            if (!Array.isArray(answer.values)) answer.values = [];
+            answer.otherChecked = Boolean(answer.otherChecked);
+            if (typeof answer.other !== "string") answer.other = "";
+          } else {
+            if (typeof answer.value !== "string") answer.value = "";
+            if (typeof answer.other !== "string") answer.other = "";
+          }
+          return answer;
+        }
+
+        function initAnswers() {
+          for (const question of state.form.questions) getAnswer(question);
+        }
+
+        function isAnswered(question) {
+          const answer = getAnswer(question);
+          if (question.type === "single") return Boolean(answer.value);
+          if (question.type === "multi") {
+            return answer.values.length > 0 || answer.otherChecked;
+          }
+          return Boolean((answer.value || "").trim());
+        }
+
+        function countUnansweredRequired() {
+          return state.form.questions.filter(
+            (question) => question.required && !isAnswered(question),
+          ).length;
+        }
+
+        function formatTextAnswer(question, answer) {
+          if (question.type === "single") {
+            if (!answer.value) return "（未回答）";
+            if (answer.value === "__other__") {
+              const other = oneLine(answer.other);
+              return other ? "其他：" + other : "其他（未填写）";
+            }
+            return oneLine(answer.value);
+          }
+          if (question.type === "multi") {
+            const values = Array.isArray(answer.values)
+              ? answer.values.map(oneLine).filter(Boolean)
+              : [];
+            if (answer.otherChecked) {
+              const other = oneLine(answer.other);
+              values.push(other ? "其他：" + other : "其他（未填写）");
+            }
+            return values.length > 0 ? values.join("、") : "（未回答）";
+          }
+          const value = (answer.value || "").trim();
+          return value || "（未回答）";
+        }
+
+        function formatAnswer(form, answers) {
+          const lines = ["表单回答 · " + oneLine(form.title), ""];
+          form.questions.forEach((question, index) => {
+            const answer =
+              answers[question.id] ||
+              (question.type === "multi"
+                ? { values: [], otherChecked: false, other: "" }
+                : { value: "", other: "" });
+            const text = formatTextAnswer(question, answer).replace(/\r\n/g, "\n");
+            const parts = text.split("\n");
+            const first = parts.shift() || "";
+            lines.push(index + 1 + ". " + oneLine(question.title) + " → " + first);
+            for (const line of parts) lines.push("   " + line);
+          });
+          return lines.join("\n");
+        }
+
+        function applyTheme() {
+          const context = host && host.hostContext;
+          const theme =
+            (host && host.theme) ||
+            (context && context.theme) ||
+            (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light");
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+          const variables = context && context.styles && context.styles.variables;
+          if (variables && typeof variables === "object") {
+            for (const [key, value] of Object.entries(variables)) {
+              if (key.startsWith("--") && typeof value === "string") {
+                document.documentElement.style.setProperty(key, value);
+              }
+            }
+          }
+        }
+
+        let heightTimer = 0;
+        function reportHeight() {
+          window.clearTimeout(heightTimer);
+          heightTimer = window.setTimeout(() => {
+            if (!host || typeof host.notifyIntrinsicHeight !== "function") return;
+            host.notifyIntrinsicHeight(Math.ceil(document.body.scrollHeight));
+          }, 60);
+        }
+
+        function widgetStatePayload() {
+          return {
+            modelContent: null,
+            privateContent: {
+              formId: state.formId,
+              answers: state.answers,
+              submitted: state.submitted,
+              submittedMessage: state.submittedMessage,
+              collapsed: state.collapsed,
+            },
+          };
+        }
+
+        async function persistNow() {
+          if (!host || typeof host.setWidgetState !== "function") return;
+          try {
+            await host.setWidgetState(widgetStatePayload());
+          } catch {
+            // Draft persistence is best-effort; a quota error must not break the form.
+          }
+        }
+
+        let saveTimer = 0;
+        function saveState() {
+          if (!host || typeof host.setWidgetState !== "function") return;
+          window.clearTimeout(saveTimer);
+          saveTimer = window.setTimeout(() => {
+            void persistNow();
+          }, 150);
+        }
+
+        function restore() {
+          try {
+            const saved = host && host.widgetState && host.widgetState.privateContent;
+            if (!saved || saved.formId !== state.formId) return;
+            if (saved.answers && typeof saved.answers === "object") {
+              state.answers = saved.answers;
+            }
+            state.submitted = Boolean(saved.submitted);
+            state.submittedMessage =
+              typeof saved.submittedMessage === "string" ? saved.submittedMessage : "";
+            state.collapsed = state.submitted ? saved.collapsed !== false : false;
+          } catch {
+            // Ignore malformed persisted state.
+          }
+        }
+
+        function init(form) {
+          if (
+            !form ||
+            typeof form !== "object" ||
+            typeof form.title !== "string" ||
+            !Array.isArray(form.questions)
+          ) {
+            renderFatal("表单数据无效，请让 agent 重新生成。");
+            return;
+          }
+          state.form = form;
+          state.formId = hashString(JSON.stringify(form));
+          state.answers = {};
+          state.submitting = false;
+          state.submitted = false;
+          state.submittedMessage = "";
+          state.collapsed = false;
+          state.error = "";
+          state.toolCancelled = Boolean(host && host.toolCancelled);
+          restore();
+          initAnswers();
+          render();
+        }
+
+        function renderFatal(message) {
+          root.replaceChildren(
+            el("div", { class: "card", "data-testid": "askme-card" }, [
+              el("div", { class: "error", "data-testid": "error", role: "alert", text: message }),
+            ]),
+          );
+          reportHeight();
+        }
+
+        function render() {
+          applyTheme();
+          if (!state.form) return;
+
+          if (state.toolCancelled) {
+            root.replaceChildren(
+              el("div", { class: "card", "data-testid": "askme-card" }, [
+                el("h2", { class: "title", "data-testid": "askme-title", text: state.form.title }),
+                el("p", {
+                  class: "description",
+                  text: "此表单已失效，请等待 agent 重新提问。",
+                }),
+              ]),
+            );
+            reportHeight();
+            return;
+          }
+
+          if (state.submitted && state.collapsed) {
+            root.replaceChildren(renderCollapsed());
+          } else {
+            root.replaceChildren(renderCard());
+          }
+          reportHeight();
+        }
+
+        function renderPreviewBanner() {
+          return el("div", {
+            class: "preview-banner",
+            text: "预览模式 · 未连接 ZCode，提交只会输出到控制台",
+          });
+        }
+
+        function renderCollapsed() {
+          const card = el("div", { class: "card", "data-testid": "askme-card" });
+          if (isPreview) card.append(renderPreviewBanner());
+          const count = state.form.questions.length;
+          card.append(
+            el("div", { class: "submitted-row", "data-testid": "submitted" }, [
+              el("span", { class: "check", "aria-hidden": "true", text: "✓" }),
+              el("span", { class: "submitted-text", text: "已提交 · " + count + " 题" }),
+              el("button", {
+                class: "link-button",
+                type: "button",
+                "data-testid": "expand",
+                onClick: () => {
+                  state.collapsed = false;
+                  void persistNow();
+                  render();
+                },
+                text: "展开查看",
+              }),
+            ]),
+          );
+          return card;
+        }
+
+        function renderCard() {
+          const readOnly = state.submitted;
+          const card = el("div", { class: "card", "data-testid": "askme-card" });
+          if (isPreview) card.append(renderPreviewBanner());
+
+          card.append(
+            el("div", { class: "header" }, [
+              el("div", { class: "title-row" }, [
+                el("h2", {
+                  class: "title",
+                  "data-testid": "askme-title",
+                  text: state.form.title,
+                }),
+                state.submitted ? el("span", { class: "status-badge", text: "已提交" }) : null,
+              ]),
+              state.form.description
+                ? el("p", {
+                    class: "description",
+                    "data-testid": "askme-description",
+                    text: state.form.description,
+                  })
+                : null,
+            ]),
+          );
+
+          const hasRecommendations = state.form.questions.some((question) =>
+            (question.options || []).some((option) => option.recommended),
+          );
+          if (!readOnly && hasRecommendations) {
+            card.append(
+              el("div", { class: "toolbar" }, [
+                el("button", {
+                  class: "link-button",
+                  type: "button",
+                  "data-testid": "accept-all",
+                  onClick: acceptAll,
+                  text: "采纳全部推荐",
+                }),
+              ]),
+            );
+          }
+
+          const body = el("div", { class: "form-body", "data-testid": "form-body" });
+          for (const question of state.form.questions) {
+            body.append(renderQuestion(question, readOnly));
+          }
+          card.append(body);
+
+          if (state.error) {
+            card.append(
+              el("div", {
+                class: "error",
+                "data-testid": "error",
+                role: "alert",
+                text: state.error,
+              }),
+            );
+          }
+
+          if (readOnly) {
+            card.append(
+              el("div", { class: "footer" }, [
+                el("button", {
+                  class: "link-button",
+                  type: "button",
+                  "data-testid": "collapse",
+                  onClick: () => {
+                    state.collapsed = true;
+                    void persistNow();
+                    render();
+                  },
+                  text: "收起",
+                }),
+              ]),
+            );
+          } else {
+            const unanswered = countUnansweredRequired();
+            card.append(
+              el("div", { class: "footer" }, [
+                el("div", {
+                  class: "hint",
+                  "data-testid": "unanswered-hint",
+                  hidden: unanswered === 0,
+                  text:
+                    unanswered > 0
+                      ? "还有 " + unanswered + " 道必答题未回答，仍可提交。"
+                      : "",
+                }),
+                el("button", {
+                  class: "submit",
+                  type: "button",
+                  "data-testid": "submit",
+                  disabled: state.submitting,
+                  onClick: handleSubmit,
+                  text: state.submitting ? "提交中…" : "提交",
+                }),
+              ]),
+            );
+          }
+
+          return card;
+        }
+
+        function renderQuestion(question, readOnly) {
+          const wrapper = el("fieldset", {
+            class: "question",
+            "data-testid": "question",
+            "data-question-id": question.id,
+          });
+          wrapper.append(
+            el("legend", { class: "question-legend" }, [
+              el("span", {
+                class: "question-title",
+                "data-testid": "question-title",
+                text: question.title,
+              }),
+              question.required
+                ? el("span", { class: "required-mark", text: " *", "aria-label": "必答" })
+                : null,
+            ]),
+          );
+          if (question.detail) {
+            wrapper.append(el("p", { class: "detail", text: question.detail }));
+          }
+          if (question.type === "single" || question.type === "multi") {
+            wrapper.append(renderChoice(question, readOnly));
+          } else {
+            wrapper.append(renderText(question, readOnly));
+          }
+          return wrapper;
+        }
+
+        function renderChoice(question, readOnly) {
+          const options = el("div", { class: "options" });
+          (question.options || []).forEach((option, index) => {
+            options.append(renderOption(question, option, index, readOnly));
+          });
+          if (question.allowOther !== false) {
+            options.append(renderOther(question, (question.options || []).length, readOnly));
+          }
+          return options;
+        }
+
+        function renderOption(question, option, index, readOnly) {
+          const answer = getAnswer(question);
+          const isSingle = question.type === "single";
+          const checked = isSingle
+            ? answer.value === option.label
+            : answer.values.includes(option.label);
+          const inputId = "askme-" + state.formId + "-" + question.id + "-opt-" + index;
+          const input = el("input", {
+            type: isSingle ? "radio" : "checkbox",
+            id: inputId,
+            name: "askme-" + state.formId + "-" + question.id,
+            value: option.label,
+            checked,
+            disabled: readOnly,
+          });
+          input.addEventListener("change", () => {
+            if (isSingle) {
+              answer.value = option.label;
+            } else {
+              const values = new Set(answer.values);
+              if (input.checked) values.add(option.label);
+              else values.delete(option.label);
+              answer.values = Array.from(values);
+            }
+            state.error = "";
+            saveState();
+            render();
+          });
+
+          return el(
+            "label",
+            {
+              class: "option",
+              "data-testid": "option-" + question.id + "-" + index,
+              for: inputId,
+            },
+            [
+              input,
+              el("span", { class: "option-body" }, [
+                el("span", { class: "option-label" }, [
+                  el("span", { class: "option-text", text: option.label }),
+                  option.recommended
+                    ? el("span", {
+                        class: "recommended",
+                        "data-testid": "recommended-badge",
+                        text: "推荐",
+                      })
+                    : null,
+                ]),
+                option.description
+                  ? el("span", { class: "option-description", text: option.description })
+                  : null,
+              ]),
+            ],
+          );
+        }
+
+        function renderOther(question, index, readOnly) {
+          const answer = getAnswer(question);
+          const isSingle = question.type === "single";
+          const checked = isSingle ? answer.value === "__other__" : answer.otherChecked;
+          const inputId = "askme-" + state.formId + "-" + question.id + "-other";
+          const input = el("input", {
+            type: isSingle ? "radio" : "checkbox",
+            id: inputId,
+            name: "askme-" + state.formId + "-" + question.id,
+            value: "__other__",
+            checked,
+            disabled: readOnly,
+          });
+          input.addEventListener("change", () => {
+            if (isSingle) {
+              answer.value = input.checked ? "__other__" : "";
+            } else {
+              answer.otherChecked = input.checked;
+            }
+            state.error = "";
+            saveState();
+            render();
+          });
+
+          const otherInput = el("input", {
+            type: "text",
+            class: "other-input",
+            "data-testid": "other-input-" + question.id,
+            placeholder: "请输入…",
+            value: answer.other || "",
+            disabled: readOnly || !checked,
+          });
+          otherInput.addEventListener("input", () => {
+            answer.other = otherInput.value;
+            saveState();
+          });
+
+          const label = el(
+            "label",
+            {
+              class: "option",
+              "data-testid": "option-" + question.id + "-" + index,
+              for: inputId,
+            },
+            [
+              input,
+              el("span", { class: "option-body" }, [
+                el("span", { class: "option-label" }, [
+                  el("span", { class: "option-text", text: "其他" }),
+                ]),
+              ]),
+            ],
+          );
+
+          return el("div", { class: "option-wrap" }, [label, otherInput]);
+        }
+
+        function renderText(question, readOnly) {
+          const answer = getAnswer(question);
+          const isTextarea = question.type === "textarea";
+          const input = el(isTextarea ? "textarea" : "input", {
+            class: isTextarea ? "textarea-input" : "text-input",
+            "data-testid": "text-" + question.id,
+            type: isTextarea ? undefined : "text",
+            rows: isTextarea ? 4 : undefined,
+            maxlength: question.maxLength ?? (isTextarea ? 4000 : 500),
+            placeholder: question.placeholder || question.suggestion || "",
+            value: answer.value || "",
+            disabled: readOnly,
+          });
+          input.addEventListener("input", () => {
+            answer.value = input.value;
+            state.error = "";
+            saveState();
+            updateLiveHints();
+          });
+          return input;
+        }
+
+        function updateLiveHints() {
+          const hint = root.querySelector('[data-testid="unanswered-hint"]');
+          if (!hint) return;
+          const count = countUnansweredRequired();
+          hint.textContent =
+            count > 0 ? "还有 " + count + " 道必答题未回答，仍可提交。" : "";
+          hint.hidden = count === 0;
+        }
+
+        function acceptAll() {
+          for (const question of state.form.questions) {
+            const answer = getAnswer(question);
+            const recommended = (question.options || []).filter(
+              (option) => option.recommended,
+            );
+            if (question.type === "single" && recommended.length > 0) {
+              answer.value = recommended[0].label;
+            } else if (question.type === "multi" && recommended.length > 0) {
+              answer.values = recommended.map((option) => option.label);
+            }
+          }
+          state.error = "";
+          saveState();
+          render();
+        }
+
+        async function handleSubmit() {
+          if (state.submitting || state.submitted) return;
+          state.error = "";
+          state.submitting = true;
+          render();
+          const message = formatAnswer(state.form, state.answers);
+          try {
+            if (!host || typeof host.sendFollowUpMessage !== "function") {
+              throw new Error("当前环境不支持提交。");
+            }
+            await host.sendFollowUpMessage({ prompt: message });
+            state.submitted = true;
+            state.submittedMessage = message;
+            state.collapsed = true;
+          } catch (error) {
+            state.error = error && error.message ? error.message : String(error);
+          } finally {
+            state.submitting = false;
+            await persistNow();
+            render();
+          }
+        }
+
+        async function boot() {
+          try {
+            if (host && host.ready && typeof host.ready.then === "function") {
+              await host.ready;
+            }
+          } catch (error) {
+            renderFatal(
+              "无法连接 ZCode：" + (error && error.message ? error.message : String(error)),
+            );
+            return;
+          }
+
+          let form = host && host.toolInput;
+          if (!form) {
+            if (isPreview) {
+              form = previewForm;
+            } else {
+              renderFatal("表单数据未加载，请让 agent 重新生成。");
+              return;
+            }
+          }
+
+          init(form);
+
+          if (host && typeof host.subscribe === "function") {
+            host.subscribe(() => {
+              const next = host.toolInput;
+              if (!next) return;
+              const nextId = hashString(JSON.stringify(next));
+              if (nextId !== state.formId) {
+                init(next);
+              } else {
+                state.toolCancelled = Boolean(host.toolCancelled);
+                applyTheme();
+                render();
+              }
+            });
+          }
+        }
+
+        if (window.ResizeObserver) {
+          const observer = new ResizeObserver(() => reportHeight());
+          observer.observe(document.body);
+        }
+
+        void boot();
+      })();
+    </script>
+  </body>
+</html>
