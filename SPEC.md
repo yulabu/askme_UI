@@ -20,7 +20,7 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 - 卡片支持单选（含「其他」）、多选（含「其他」）、短文本、长文本、必答标记、推荐徽标、一键采纳推荐、部分提交、提交后只读折叠、深浅色主题、草稿持久化。
 - 提交时卡片调用 app-only 的 `askme_submit`；`askme_form` 立即返回 `formId` 并渲染卡片，agent 紧接着调用 `askme_wait` 阻塞等待；提交后 `askme_wait` 返回格式化 Markdown，agent 在同一轮继续。不调用 `sendFollowUpMessage`，因此不会触发宿主确认框。
 - 插件自带 skill，声明「需要向用户提问时优先使用」；并在 grilling 技能中加一行委托，使 `/grill-me` 自动改用表单。
-- 一条用户级全局偏好（`~/.zcode/AGENTS.md`）兜底，让 agent 全面优先使用该工具；宿主强制的权限确认、plan 审批仍走内置流程。
+- 插件通过工具描述、插件 skill 和 grilling 委托独立工作；**不依赖也不修改全局 `~/.zcode/AGENTS.md`**。需要全面优先时，由用户自行选择加全局偏好。宿主强制的权限确认、plan 审批仍走内置流程。
 
 ## User Stories
 
@@ -87,7 +87,7 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 44. As the ZCode user, I want to install the plugin through a local marketplace, so that installation uses ZCode's normal plugin flow.
 45. As the ZCode user, I want the installed plugin to require no build step or `node_modules`, so that it keeps working after installation.
 46. As the ZCode user, I want `/grill-me` to fall back to its current plain-text behavior when the plugin is disabled, so that the workflow never breaks.
-47. As the ZCode user, I want a user-level preference that tells the agent to prefer the form tool, so that "full priority" survives sessions and projects.
+47. As the ZCode user, I want the plugin to work without modifying my global AGENTS.md, so that installing it has no global side effects.
 48. As the ZCode user, I want the plugin's skill to document when and how to use the tool, so that the agent generates valid schemas without guessing.
 49. As the ZCode user, I want a README with install, development, and test steps, so that I can maintain the plugin later.
 50. As the ZCode user, I want versioned installs and updates, so that I can tell which build is running.
@@ -226,9 +226,9 @@ type Option = {
 - 工具描述明确写出：需要向用户提澄清问题时优先使用，替代内置 `AskUserQuestion`；调用 `askme_form` 后必须在同一轮立即调用 `askme_wait`。
 - 插件 skill 自动触发，规定使用场景、schema 生成规则、一轮一表单、最后动作、失败降级。
 - `grilling` 技能加一行委托：若 `askme_form` 可用，则把整轮问题合并为一次工具调用，保留原有问题、选项与推荐；工具等待提交并在同一轮返回答案。
-- 用户级全局偏好写入 `~/.zcode/AGENTS.md`（ZCode 唯一加载的用户级指令文件；当前不存在，需要新建；单文件上限 100 KiB）：需要向用户提澄清问题时优先使用 `askme_form`。
-- 全面优先：所有 agent 主动澄清提问走表单；宿主强制的权限确认、plan 审批不接管。
-- 宿主没有工具优先级机制，插件也无法用同名覆盖内置工具；优先级只能靠工具描述、skill、`AGENTS.md` 三层软约束。模型偶发仍选内置，视为可接受降级。
+- 全局偏好是可选增强，默认不写；插件不修改 `~/.zcode/AGENTS.md`。
+- 默认按需使用：显式请求或 `/grill-me` 触发；泛化提问可能走内置。需要全面优先时，由用户自行加全局偏好。
+- 宿主没有工具优先级机制，插件也无法用同名覆盖内置工具；默认优先级靠工具描述、插件 skill、grilling 委托。模型偶发仍选内置，视为可接受降级。
 - 保证 MCP 工具常驻模型工具列表：server 配置 `alwaysLoad: true`，或工具 `_meta["anthropic/alwaysLoad"]: true`；本机 `toolSearchMode` 已是 `off`，默认不进入 deferred 流程。
 - 可选硬化（不在 v1，需单独确认）：插件内提供 `PermissionRequest` hook，对 `AskUserQuestion` 返回 deny 并附「请改用 askme_form」的理由。这是唯一能硬性禁用内置提问的手段，但会影响所有会话的提问行为，默认不启用。
 
@@ -300,7 +300,7 @@ type Option = {
 - 新会话中 agent 主动调用 `askme_form`，卡片内联出现。
 - 点击提交后，`askme_wait` 的工具结果返回格式化答案，agent 在同一轮继续；不出现用户消息气泡或确认框。
 - 表单等待期间卡片保持可交互；宿主停止该轮后卡片显示失效，agent 收到取消/超时错误。
-- `/grill-me` 在插件启用时出表单，禁用时保持纯文本。
+- 无全局 AGENTS 时：显式请求或 `/grill-me` 能触发；泛化请求可能走内置，属预期。
 - 8 题表单在窄窗口、深色模式下可读且无内部滚动。
 
 ### Prior Art
@@ -336,7 +336,7 @@ type Option = {
 - 官方没有 UI 插件开发文档或模板，行为依据运行时实现与官方打包产物；实现需以实测为准。
 - 内置 `AskUserQuestion` 是模型可见工具，与 MCP 工具同处一个注册表；支持 1..4 题、2..4 选项、自动提供 Other，答案以工具结果回灌，不产生 user 消息。
 - 宿主没有工具优先级机制；MCP 工具名固定为 `mcp__<server>__<tool>` 形式，无法与内置名冲突或覆盖内置工具。
-- 用户级指令只加载 `~/.zcode/AGENTS.md`；工作区级从 cwd 向上到 git 根查找同名文件。不存在 `CLAUDE.md` / `ZCODE.md` / `.zcode/rules` 的加载路径。
+- 用户级指令只加载 `~/.zcode/AGENTS.md`；工作区级从 cwd 向上到 git 根查找同名文件。不存在 `CLAUDE.md` / `ZCODE.md` / `.zcode/rules` 的加载路径。本插件默认不写它。
 - Skill frontmatter 允许 `name`、`description`、`when_to_use`、`license`、`metadata`；`description` 对插件 skill 必填；隐式调用恒允许，没有关闭开关。
 
 - 实机 0.1.0 已验证：不声明 `ui.surfaces` 时内联卡片能渲染；0.1.1 修了 tool input 晚到导致的误报；0.2.0 的自阻塞会导致卡片加载死锁；0.2.1 改为 form + wait 两段式。
@@ -355,7 +355,7 @@ type Option = {
 - **无官方文档**：以构建产物 + 实机验证为准，预留 1–2 轮修正。
 - **长工具调用**：manifest `timeoutMs` 10 分钟 + 15 秒 progress 心跳；服务端 9.5 分钟兜底；宿主停止会清理 pending form。
 - **widget 复用**：卡片以 `toolInput` 为主、`toolOutput.form` 兜底，form id 隔离草稿；必要时改用独立 surface。
-- **内置工具竞争**：工具描述 + skill + `~/.zcode/AGENTS.md` 三层软约束；接受偶发降级。若实测仍频繁走内置，再评估启用 `PermissionRequest` hook 硬化。
+- **内置工具竞争**：工具描述 + 插件 skill + grilling 委托；不写全局 AGENTS；接受偶发降级。需要更强时由用户自行加全局偏好或评估 `PermissionRequest` hook。
 - **安装/更新摩擦**：本地市场 + 版本号递增；README 记录步骤。
 
 ### Readiness Checklist
@@ -365,7 +365,7 @@ type Option = {
 - [x] 工具契约与答案格式确定
 - [x] 失败降级与安全边界确定
 - [x] 测试 seam 设计
-- [x] 全局偏好文件位置确认（`~/.zcode/AGENTS.md`）
+- [x] 不修改全局 `~/.zcode/AGENTS.md`（按用户要求；插件独立工作）
 - [x] 测试 seam 与用户确认
 - [x] grilling 一行委托获批
 - [x] 本地 marketplace 与安装步骤实测

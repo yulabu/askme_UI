@@ -45,14 +45,17 @@ askme_UI/
 
 3. 在 **个人 → dev-askme-ui** 找到 **问我 / Ask Me**，点击安装。
 4. **新建一个任务**再使用。插件安装、启用、禁用都只对新会话生效，当前会话不会加载新工具。
-5. 确认 `~/.zcode/AGENTS.md` 已写入「优先使用 askme_form」的偏好（本机已经写入；如果文件被重置，需要补回）。
+
+插件**不修改全局配置**：它通过自身的 `askme` skill、工具描述和 `/grill-me` 委托触发。需要 agent 全面优先时，再自行决定是否在 `~/.zcode/AGENTS.md` 加偏好。
 
 ## 使用
 
 装好后有两种触发方式：
 
-- **agent 自主调用**：直接说「用表单问我几个问题」或任何需要澄清的任务；agent 会调用 `askme_form`。
+- **agent 自主调用**：直接说「用表单问我几个问题」或「用 askme 插件问我」；agent 会调用 `askme_form`。
 - **`/grill-me`**：grilling 技能里加了一行委托，检测到 `askme_form` 可用时会把每轮问题合并成一张表单，保留原来的问题、选项和推荐答案。
+
+插件不依赖全局偏好；泛化提问时模型仍可能选内置 `AskUserQuestion`，这是预期行为。需要全面优先时，再自行加 `~/.zcode/AGENTS.md` 偏好。
 
 提交后，`askme_wait` 的工具结果会带上类似下面的答案（不再是一条单独的用户消息）：
 
@@ -103,7 +106,7 @@ npm run test:ui                  # 卡片 UI 测试（25 项，Playwright）
 - **无宿主确认框**：提交走 app-only 的 `askme_submit`，不调用 `sendFollowUpMessage`，因此不会出现「插件想以你的身份发送消息」的弹窗。
 - **超时**：manifest 里 MCP `timeoutMs` 设为 10 分钟；`askme_wait` 每 15 秒发一次 progress 心跳，宿主会重置工具调用超时。用户也可以随时停止该轮。
 - **限制**：单张表单最多 8 题；widget state 16 KiB；HTML 资源单次读取 8 MiB；工具结果文本上限 30 KiB；卡片不发外部请求。
-- **优先级是软的**：宿主没有工具优先级机制，插件也无法覆盖内置 `AskUserQuestion`。目前靠工具描述、skill、`~/.zcode/AGENTS.md` 三层引导，偶发仍走内置属于可接受降级。可选的 `PermissionRequest` hook 硬化没有启用（会硬性禁用内置提问）。
+- **优先级是软的**：宿主没有工具优先级机制，插件也无法覆盖内置 `AskUserQuestion`。目前靠工具描述、插件 skill 和 grilling 委托引导；**不修改全局 `~/.zcode/AGENTS.md`**。显式请求最稳；泛化提问偶发走内置属于预期降级。需要全面优先时，再单独加全局偏好或 `PermissionRequest` hook。
 
 ## 已知待实测
 
@@ -111,6 +114,7 @@ npm run test:ui                  # 卡片 UI 测试（25 项，Playwright）
 - 宿主对 10 分钟 `askme_wait` 的实际表现：进度心跳是否续期、停止按钮是否能取消。
 - app-only 的 `askme_submit` 是否能从卡片内正常调用（不在模型工具列表里）。
 - 同一资源多次调用时，旧卡片是否会被新调用改写。
+- 无全局 AGENTS 时的独立触发：显式请求或 `/grill-me` 应稳定；泛化提问可能走内置。
 
 实机 0.1.0 已经验证：不声明 `ui.surfaces` 时内联卡片能渲染。0.1.1 修了 tool input 晚到导致的误报；0.2.0 的“askme_form 自己阻塞”会因为宿主等待工具返回而卡在“正在加载插件界面”，0.2.1 改成 `askme_form` 立即返回 + `askme_wait` 阻塞的两段式。
 
@@ -124,7 +128,7 @@ npm run test:ui                  # 卡片 UI 测试（25 项，Playwright）
 
 ## 回退
 
-- **全局偏好**：编辑 `~/.zcode/AGENTS.md`，删除「Asking the user questions」一节。
+- **全局偏好**：本插件默认不写 `~/.zcode/AGENTS.md`；如果你后来手动加过，删除对应段落即可。
 - **grilling 委托**：编辑 `~/.zcode/plugins/mattpocock-skills/skills/grilling/SKILL.md`，删除以 `If the askme_form tool is available` 开头的那一行。插件未启用时，这一行本来就是空操作。
 - **卸载插件**：ZCode 设置 → 插件 → 卸载 `askme`。
 
