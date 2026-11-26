@@ -14,9 +14,9 @@ When `askme_form` is available, use it for every clarification round instead of 
 
 ## Rules
 
-- For a grilling/interview round, put the **entire frontier** in the form: one question per decision, up to 8 questions. Do not pre-trim to 4-5 questions and do not merge separate decisions to make the form shorter. Split only when the frontier exceeds 8.
-- The example below is illustrative, not a target question count; use as many questions as the frontier needs, up to 8.
-- Recommendations are suggestions, not answers; still ask every open decision.
+- This plugin is a UI layer: it renders the questions you provide and does not decide which questions to ask or how many. Follow the active interview skill (for grilling, the grilling skill) for question selection.
+- Put the questions you want to ask in one form. The card can render up to 30 questions; split only if you have more than 30.
+- The example below shows the shape, not a target question count.
 - Put your prose and analysis in a normal message before the tool call. The form carries only the title, description, and questions.
 - Call `askme_form` as the **last action** of your turn, then end your turn. Do not answer your own questions or guess the user's answers.
 - Types:

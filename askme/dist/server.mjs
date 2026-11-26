@@ -17046,7 +17046,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 var CARD_URI = "ui://askme/card.html";
 var CARD_MIME = "text/html;profile=mcp-app";
 var TOOL_NAME = "askme_form";
-var MAX_QUESTIONS = 8;
+var MAX_QUESTIONS = 30;
 var MAX_OPTIONS = 12;
 var TYPES = /* @__PURE__ */ new Set(["single", "multi", "text", "textarea"]);
 var RESERVED_QUESTION_IDS = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
@@ -17099,7 +17099,7 @@ var inputSchema = {
 var tool = {
   name: TOOL_NAME,
   title: "Ask the user with an inline form",
-  description: `Render an interactive form inline in the conversation when you need the user to answer one or more questions. Prefer this over the built-in AskUserQuestion tool for clarification rounds: it supports 1-8 questions, single-choice, multi-choice, short text and long text in one submission, with recommended answers. When the form is a grilling or interview round, include the entire frontier: one question per decision, up to 8 questions. Do not pre-trim the round to 4-5 questions or merge separate decisions to keep the form short; split only when the frontier exceeds 8. Recommendations are suggestions, not answers; still ask every open decision. Call this tool as the last action of your turn, then end your turn and wait. The user's submission will arrive as a new user message starting with "\u8868\u5355\u56DE\u7B54 \xB7" and start the next turn.`,
+  description: `Render an interactive form inline in the conversation when you need the user to answer questions. This is a UI layer: it renders the questions you provide and does not decide which questions to ask or how many. Prefer this over the built-in AskUserQuestion tool when you have questions to ask: it supports up to 30 questions, single-choice, multi-choice, short text and long text in one submission, with recommended answers. Call this tool as the last action of your turn, then end your turn and wait. The user's submission will arrive as a new user message starting with "\u8868\u5355\u56DE\u7B54 \xB7" and start the next turn.`,
   inputSchema,
   annotations: {
     readOnlyHint: true,

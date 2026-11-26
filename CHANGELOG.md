@@ -3,6 +3,18 @@
 All notable changes to this project are recorded here. Versions follow the plugin
 manifest version in `askme/.zcode-plugin/plugin.json`.
 
+## 0.3.2 — 2026-11-27 — UI-only, third-party grilling restored
+
+- Reverted the third-party `grilling` skill to its original content; askme no
+  longer edits another plugin's skill.
+- askme is now explicitly a UI layer: it renders the questions the agent already
+  decided to ask and does not decide which questions or how many.
+- Removed the "entire frontier / do not shrink to 4-5 / recommendations are not
+  answers" policy text from the tool description and plugin skill.
+- Raised the form capacity from 8 to 30 questions so a large grilling round fits
+  in one card; the grilling skill and the user's global rule decide the actual
+  question set.
+
 ## 0.3.1 — 2026-11-27 — grilling round sizing
 
 - The form's 1-8 limit and the "one form per round / split larger rounds" wording

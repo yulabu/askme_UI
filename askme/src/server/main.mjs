@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const CARD_URI = "ui://askme/card.html";
 const CARD_MIME = "text/html;profile=mcp-app";
 const TOOL_NAME = "askme_form";
-const MAX_QUESTIONS = 8;
+const MAX_QUESTIONS = 30;
 const MAX_OPTIONS = 12;
 const TYPES = new Set(["single", "multi", "text", "textarea"]);
 const RESERVED_QUESTION_IDS = new Set(["__proto__", "constructor", "prototype"]);
@@ -72,9 +72,9 @@ const tool = {
   name: TOOL_NAME,
   title: "Ask the user with an inline form",
   description:
-    "Render an interactive form inline in the conversation when you need the user to answer one or more questions. " +
-    "Prefer this over the built-in AskUserQuestion tool for clarification rounds: it supports 1-8 questions, single-choice, multi-choice, short text and long text in one submission, with recommended answers. " +
-    "When the form is a grilling or interview round, include the entire frontier: one question per decision, up to 8 questions. Do not pre-trim the round to 4-5 questions or merge separate decisions to keep the form short; split only when the frontier exceeds 8. Recommendations are suggestions, not answers; still ask every open decision. " +
+    "Render an interactive form inline in the conversation when you need the user to answer questions. " +
+    "This is a UI layer: it renders the questions you provide and does not decide which questions to ask or how many. " +
+    "Prefer this over the built-in AskUserQuestion tool when you have questions to ask: it supports up to 30 questions, single-choice, multi-choice, short text and long text in one submission, with recommended answers. " +
     "Call this tool as the last action of your turn, then end your turn and wait. The user's submission will arrive as a new user message starting with \"表单回答 ·\" and start the next turn.",
   inputSchema,
   annotations: {

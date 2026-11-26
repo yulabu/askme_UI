@@ -1,6 +1,6 @@
 # askme — 内联交互表单提问插件
 
-状态：Implemented v0.3.1（用户消息模式，完整决策集，实机提交待验）
+状态：Implemented v0.3.2（纯 UI 层，用户消息模式，实机提交待验）
 版本：0.1
 日期：2026-11-24
 
@@ -39,8 +39,8 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 
 9. As the ZCode user, I want a form title and optional one-line description, so that I know which round of questions I am answering.
 10. As the ZCode user, I want each question to have a title and optional one-line detail, so that long context does not bloat the form.
-11. As the ZCode user, I want to answer up to 8 questions in one form, so that a typical clarification round is a single submission.
-12. As the ZCode user, I want the agent to split more than 8 questions into multiple forms, so that the form never becomes an endless page.
+11. As the ZCode user, I want to answer up to 30 questions in one form, so that a typical clarification round is a single submission.
+12. As the ZCode user, I want the agent to split more than 30 questions into multiple forms, so that the form never becomes an endless page.
 13. As the ZCode user, I want questions marked as required or optional, so that I know which ones matter most.
 14. As the ZCode user, I want to submit a partially answered form, with unanswered questions clearly marked, so that I am never blocked by a question I cannot answer.
 15. As the ZCode user, I want questions to keep their original order, so that the form matches the agent's reasoning.
@@ -79,7 +79,7 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 39. As the ZCode user, I want the form to adapt to narrow windows, so that it remains usable when the chat pane is small.
 40. As the ZCode user, I want keyboard navigation and visible focus states, so that I can answer without a mouse.
 41. As the ZCode user, I want the card to make no external network requests, so that it works offline and does not leak data.
-42. As the ZCode user, I want the card height to fit its content automatically, so that there is no nested scrolling for a typical 8-question form.
+42. As the ZCode user, I want the card height to fit its content automatically, so that there is no nested scrolling for a typical 30-question form.
 43. As the ZCode user, I want old or superseded forms to be clearly non-submittable, so that I cannot send stale answers.
 
 ### 集成与运维
@@ -126,7 +126,7 @@ ZCode 内置的 `AskUserQuestion` 是宿主驱动的单次提问 UI，无法承�
 type AskmeForm = {
   title: string                    // 1..200
   description?: string             // <= 500
-  questions: Question[]            // 1..8
+  questions: Question[]            // 1..30
 }
 
 type Question = {
@@ -151,7 +151,7 @@ type Option = {
 
 校验规则：
 
-- 超过 8 题直接返回错误，提示 agent 拆成多张表单。
+- 超过 30 题直接返回错误，提示 agent 拆成多张表单。
 - `single` 最多一个 `recommended`；多个时服务端归一到第一个，并在结果中提示。
 - `multi` 允许任意数量 `recommended`。
 - 选择型没有有效选项、选项 label 重复、id 重复、类型非法时返回可读错误，不渲染卡片。
@@ -214,7 +214,7 @@ type Option = {
 - 工具描述明确写出：需要向用户提澄清问题时优先使用，替代内置 `AskUserQuestion`；调用后结束本轮。
 - 插件 skill 自动触发，规定使用场景、schema 生成规则、一轮一表单、最后动作、失败降级。
 - `grilling` 技能加一行委托：若 `askme_form` 可用，则把整轮问题合并为一次工具调用，保留原有问题、选项与推荐；正文仍写在普通消息里。
-- grilling/访谈轮次必须保留完整决策集：一题一决策，最多 8 题；不得预缩到 4-5 题或合并决策；推荐项只是建议，不替代提问；只有超过 8 才拆。
+- 插件是纯 UI 层：渲染 agent 已经决定要问的问题，不介入提问数量或访谈策略；grilling 保持原文。
 - 全局偏好是可选增强，默认不写；插件不修改 `~/.zcode/AGENTS.md`。
 - 默认按需使用：显式请求或 `/grill-me` 触发；泛化提问可能走内置。需要全面优先时，由用户自行加全局偏好。
 - 宿主没有工具优先级机制，插件也无法用同名覆盖内置工具；默认优先级靠工具描述、插件 skill、grilling 委托。模型偶发仍选内置，视为可接受降级。
@@ -257,12 +257,12 @@ type Option = {
 ### Server Tests
 
 - `initialize` 返回 tools/resources 能力，协议版本可协商。
-- `tools/list` 只暴露 `askme_form`，描述包含「优先于内置提问」「本轮最后动作」「entire frontier」「4-5」「up to 8」，`_meta.ui.resourceUri` 正确。
+- `tools/list` 只暴露 `askme_form`，描述包含「UI layer」「does not decide」「up to 30」，且不包含整批/4-5/别缩等提问策略；`_meta.ui.resourceUri` 正确。
 - `resources/list` 包含卡片资源，MIME 为 `text/html;profile=mcp-app`。
 - `resources/read` 返回 HTML 文本（非 blob），大小在限制内，内容包含卡片脚本。
 - `tools/call` 合法 schema 返回成功结果、内联渲染元数据及 `structuredContent.form`。
 - 工具带 `readOnlyHint: true` 注解（不修改工作区），不影响交互语义。
-- `tools/call` 非法 schema（>8 题、重复 id、保留 id、保留 label、选择型缺选项、非法类型）返回可读错误和结构化错误数据，且不渲染卡片。
+- `tools/call` 非法 schema（>30 题、重复 id、保留 id、保留 label、选择型缺选项、非法类型）返回可读错误和结构化错误数据，且不渲染卡片。
 - 未知方法/工具返回标准 JSON-RPC 错误。
 - 卡片资源不包含外部 URL、`eval` 或 `new Function`。
 
@@ -285,7 +285,7 @@ type Option = {
 - 点击提交后，主会话出现格式化用户消息，agent 开始下一轮。
 - 宿主若弹出确认框，取消后表单仍可编辑；确认后消息正确发送。
 - `/grill-me` 在插件启用时出表单，禁用时保持纯文本。
-- 8 题表单在窄窗口、深色模式下可读且无内部滚动。
+- 30 题表单在窄窗口、深色模式下可读且无内部滚动。
 
 ### Prior Art
 
@@ -302,7 +302,7 @@ type Option = {
 - 多语言 UI（v1 中文文案；文案暂不集中管理，后续需要时再抽）。
 - 服务端保存答案、分析、审计。
 - 提交后就地编辑答案（用户可直接打字修正，或由 agent 重新发题）。
-- 单张表单超过 8 题（拆分为多轮）。
+- 单张表单超过 30 题（拆分为多轮）。
 - 开发期热重载。
 
 ## Further Notes

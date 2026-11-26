@@ -75,9 +75,10 @@ test("tools/list exposes one model-visible inline tool with a valid schema", asy
   assert.equal(tool.name, "askme_form");
   assert.match(tool.description, /AskUserQuestion/);
   assert.match(tool.description, /last action/i);
-  assert.match(tool.description, /entire frontier/i);
-  assert.match(tool.description, /4-5 questions/i);
-  assert.match(tool.description, /up to 8/i);
+  assert.match(tool.description, /UI layer/i);
+  assert.match(tool.description, /does not decide/i);
+  assert.match(tool.description, /up to 30/i);
+  assert.doesNotMatch(tool.description, /entire frontier|4-5|do not shrink/i);
   assert.equal(tool._meta?.ui?.resourceUri, CARD_URI);
   assert.equal(tool._meta?.ui?.preferredDisplayMode, "inline");
   assert.equal(tool._meta?.ui?.showInline, true);
@@ -87,7 +88,7 @@ test("tools/list exposes one model-visible inline tool with a valid schema", asy
   assert.equal(tool.inputSchema.type, "object");
   assert.deepEqual(tool.inputSchema.required, ["title", "questions"]);
   assert.equal(tool.inputSchema.properties.questions.minItems, 1);
-  assert.equal(tool.inputSchema.properties.questions.maxItems, 8);
+  assert.equal(tool.inputSchema.properties.questions.maxItems, 30);
 });
 
 test("resources/list advertises the card as an MCP App HTML resource", async () => {
@@ -123,8 +124,8 @@ test("tools/call accepts a valid form and tells the model to end its turn", asyn
   assert.equal(result.structuredContent.form.questions.length, 3);
 });
 
-test("tools/call rejects more than 8 questions and asks the model to split", async () => {
-  const questions = Array.from({ length: 9 }, (_, index) => ({
+test("tools/call rejects more than 30 questions and asks the model to split", async () => {
+  const questions = Array.from({ length: 31 }, (_, index) => ({
     id: `q${index + 1}`,
     title: `问题 ${index + 1}`,
     type: "text",
@@ -134,7 +135,7 @@ test("tools/call rejects more than 8 questions and asks the model to split", asy
     arguments: { title: "Too many", questions },
   });
   assert.equal(result.isError, true);
-  assert.match(result.content[0].text, /8/);
+  assert.match(result.content[0].text, /30/);
   assert.match(result.content[0].text, /split/i);
 });
 

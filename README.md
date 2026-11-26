@@ -4,7 +4,7 @@ ZCode 的内联交互表单插件：agent 需要向你提问时，在对话消�
 
 为 `grill-me` / `grilling` 这类访谈式澄清流程设计，也适用于任何需要 agent 主动提问的场景。
 
-- 版本：`0.3.1`（用户消息模式）
+- 版本：`0.3.2`（用户消息模式）
 - 协议：MIT
 - 仓库：https://github.com/yulabu/askme_UI
 - 状态：个人自用，功能冻结；不做公开市场发布
@@ -17,8 +17,8 @@ askme 把这些内容变成一张内联表单：agent 输出完问题后，卡�
 
 ## 特性
 
-- 一张表单合并 1–8 个问题，一次提交
-- grilling 轮次保留完整决策集：一题一决策，最多 8 题，不预缩到 4–5、不合并
+- 一张表单合并 1–30 个问题，一次提交
+- 纯 UI 层：渲染 agent 已经决定要问的整批问题，最多 30 题；不决定问什么、问多少
 - 四种控件：单选、多选、短文本、长文本
 - 单选/多选支持「其他」自定义输入
 - 推荐项徽标 + 「采纳全部推荐」；多选采纳时保留已选项
@@ -114,9 +114,9 @@ agent 输出本轮正文
 
 - **只做内联卡片**：ZCode 的 `ui.surfaces` 侧栏面板关闭了 `sendFollowUpMessage`、`updateModelContext`、`setWidgetState`，无法把答案作为用户消息发回主会话。
 - **异步轮次**：工具立即返回，agent 结束本轮；提交产生一条 user 消息并开启下一轮。
-- **工具契约**：`askme_form` 接收 `{ title, description?, questions[] }`；问题类型为 `single` / `multi` / `text` / `textarea`；选择型 2–12 个选项；最多 8 题。
+- **工具契约**：`askme_form` 接收 `{ title, description?, questions[] }`；问题类型为 `single` / `multi` / `text` / `textarea`；选择型 2–12 个选项；最多 30 题。
 - **答案格式**：每题一行 `n. 标题 → 答案`；多选用 `、`；其他写 `其他：...`；未答写 `（未回答）`；长文本缩进续行。
-- **限制**：单张表单最多 8 题；widget state 16 KiB；HTML 资源单次读取 8 MiB；follow-up prompt 64 KiB；卡片不发外部请求。
+- **限制**：单张表单最多 30 题；widget state 16 KiB；HTML 资源单次读取 8 MiB；follow-up prompt 64 KiB；卡片不发外部请求。
 - **安全**：卡片不使用 `innerHTML` 渲染用户/agent 文本；不使用 `eval` / wasm / 外部脚本；CSP 保持宿主默认。
 - **兼容性**：ZCode Desktop 4.0.0（macOS，Electron Node）；开发用 Node 22。
 
@@ -138,8 +138,9 @@ npm run test:ui                  # 卡片 UI 测试（24 项，Playwright）
 
 ## 版本与更新
 
-- 当前：`0.3.1`（用户消息模式，tag `v0.3.1-grilling`）
-- 上一版：`0.3.0`（用户消息模式，tag `v0.3.0-message`）
+- 当前：`0.3.2`（用户消息模式，纯 UI，tag `v0.3.2-ui-only`）
+- 上一版：`0.3.1`（tag `v0.3.1-grilling`）
+- 更早：`0.3.0`（用户消息模式，tag `v0.3.0-message`）
 - 无弹窗备选：`0.2.2`（工具结果模式，tag `v0.2.2-tool-result`）
 - 变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
 
@@ -152,7 +153,7 @@ npm run test:ui                  # 卡片 UI 测试（24 项，Playwright）
 ## 已知问题
 
 - 宿主确认框每次提交都会出现；插件无法绕过。想要无弹窗请用 tag `v0.2.2-tool-result`。
-- grill-me 如果仍问得偏少，属于模型判断；可以明确说「把该问的一次问完」。0.3.1 已把「完整决策集、一题一决策、最多 8 题、别预缩/合并」写进工具描述、askme skill 和 grilling 委托。
+- 插件只做 UI，不决定问几题；问题数量由 grilling 原文和你的全局规则决定。
 - 同一资源多次调用时，旧卡片是否会被新调用改写，仍需实机观察。
 - 无全局 AGENTS 时，显式请求或 `/grill-me` 稳定；泛化提问可能走内置。
 - 打字聚焦已在 0.2.2 修复（widget state 通知不再整卡重渲染），仍建议实机复测。
