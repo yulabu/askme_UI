@@ -75,6 +75,9 @@ test("tools/list exposes one model-visible inline tool with a valid schema", asy
   assert.equal(tool.name, "askme_form");
   assert.match(tool.description, /AskUserQuestion/);
   assert.match(tool.description, /last action/i);
+  assert.match(tool.description, /entire frontier/i);
+  assert.match(tool.description, /4-5 questions/i);
+  assert.match(tool.description, /up to 8/i);
   assert.equal(tool._meta?.ui?.resourceUri, CARD_URI);
   assert.equal(tool._meta?.ui?.preferredDisplayMode, "inline");
   assert.equal(tool._meta?.ui?.showInline, true);

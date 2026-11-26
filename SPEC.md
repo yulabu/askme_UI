@@ -1,6 +1,6 @@
 # askme — 内联交互表单提问插件
 
-状态：Implemented v0.3.0（用户消息模式，实机提交待验）
+状态：Implemented v0.3.1（用户消息模式，完整决策集，实机提交待验）
 版本：0.1
 日期：2026-11-24
 
@@ -214,6 +214,7 @@ type Option = {
 - 工具描述明确写出：需要向用户提澄清问题时优先使用，替代内置 `AskUserQuestion`；调用后结束本轮。
 - 插件 skill 自动触发，规定使用场景、schema 生成规则、一轮一表单、最后动作、失败降级。
 - `grilling` 技能加一行委托：若 `askme_form` 可用，则把整轮问题合并为一次工具调用，保留原有问题、选项与推荐；正文仍写在普通消息里。
+- grilling/访谈轮次必须保留完整决策集：一题一决策，最多 8 题；不得预缩到 4-5 题或合并决策；推荐项只是建议，不替代提问；只有超过 8 才拆。
 - 全局偏好是可选增强，默认不写；插件不修改 `~/.zcode/AGENTS.md`。
 - 默认按需使用：显式请求或 `/grill-me` 触发；泛化提问可能走内置。需要全面优先时，由用户自行加全局偏好。
 - 宿主没有工具优先级机制，插件也无法用同名覆盖内置工具；默认优先级靠工具描述、插件 skill、grilling 委托。模型偶发仍选内置，视为可接受降级。
@@ -256,7 +257,7 @@ type Option = {
 ### Server Tests
 
 - `initialize` 返回 tools/resources 能力，协议版本可协商。
-- `tools/list` 只暴露 `askme_form`，描述包含「优先于内置提问」和「本轮最后动作」，`_meta.ui.resourceUri` 正确。
+- `tools/list` 只暴露 `askme_form`，描述包含「优先于内置提问」「本轮最后动作」「entire frontier」「4-5」「up to 8」，`_meta.ui.resourceUri` 正确。
 - `resources/list` 包含卡片资源，MIME 为 `text/html;profile=mcp-app`。
 - `resources/read` 返回 HTML 文本（非 blob），大小在限制内，内容包含卡片脚本。
 - `tools/call` 合法 schema 返回成功结果、内联渲染元数据及 `structuredContent.form`。

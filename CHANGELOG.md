@@ -3,6 +3,14 @@
 All notable changes to this project are recorded here. Versions follow the plugin
 manifest version in `askme/.zcode-plugin/plugin.json`.
 
+## 0.3.1 — 2026-11-27 — grilling round sizing
+
+- The form's 1-8 limit and the "one form per round / split larger rounds" wording
+  made the model pre-trim grilling rounds to 4-5 questions. The tool description,
+  the plugin skill, and the grilling delegation now require the entire frontier:
+  one question per decision, up to 8; do not merge decisions or shrink to 4-5;
+  split only when the frontier exceeds 8. Recommendations are not answers.
+
 ## 0.3.0 — 2026-11-24 — user-message mode
 
 - Return to the original grill-me cadence: `askme_form` returns immediately, the
